@@ -1,70 +1,57 @@
 @echo off
-REM MultiRATVANET Build Script for Windows (MinGW)
-REM Usage: build.bat [--test] [--clean]
+REM ============================================================================
+REM MultiRATVANET Build Script using OMNeT++ MinGW + MSYS2
+REM ============================================================================
 
 setlocal enabledelayedexpansion
 
-set SCRIPT_DIR=%~dp0
-set ROOT_DIR=%SCRIPT_DIR:~0,-1%
-set OMNETPP_BIN=%ROOT_DIR%\external\omnetpp-5.6.1\bin
-set INET_DIR=%ROOT_DIR%\external\inet-4.2.2
-set VEINS_DIR=%ROOT_DIR%\external\veins-5.2
-set SIMU5G_DIR=%ROOT_DIR%\external\simu5g-1.1.0
+cd /d "%~dp0.."
+set "PROJECT_ROOT=%cd%"
+set "SIMULATION_ROOT=%PROJECT_ROOT%\.."
+set "OMNETPP_ROOT=%SIMULATION_ROOT%\omnetpp-5.6.1"
+set "FRAMEWORK_DIR=%PROJECT_ROOT%\framework"
+set "MSYS2_SHELL=%OMNETPP_ROOT%\tools\win64\msys2_shell.cmd"
 
 echo.
-echo === Building MultiRATVANET Framework ===
-echo Root: %ROOT_DIR%
+echo ============================================================
+echo   MultiRATVANET Build
+echo ============================================================
+echo.
+echo Project: %PROJECT_ROOT%
+echo Framework: %FRAMEWORK_DIR%
 echo.
 
-cd /d "%ROOT_DIR%\framework" || exit /b 1
-
-REM Add OMNeT++ to PATH
-set PATH=%OMNETPP_BIN%;%PATH%
-
-REM Check if --clean flag is passed
-if "%1"=="--clean" (
-    echo Cleaning...
-    if exist "out" rmdir /s /q out
-    if exist "Makefile" del Makefile
-    if exist "Makefile.inc" del Makefile.inc
-    echo ✓ Cleaned
-)
-
-REM Check for opp_makemake
-where opp_makemake >nul 2>&1
-if errorlevel 1 (
-    echo ERROR: opp_makemake not found!
-    echo Please verify OMNeT++ path: %OMNETPP_BIN%
+if not exist "%OMNETPP_ROOT%" (
+    echo ERROR: Cannot find OMNeT++ at: %OMNETPP_ROOT%
+    pause
     exit /b 1
 )
 
-echo Generating Makefile...
-opp_makemake -f --deep -O out ^
-    -I "%INET_DIR%\src" ^
-    -I "%VEINS_DIR%\src" ^
-    -I "%SIMU5G_DIR%\src" ^
-    -L "%INET_DIR%\src" ^
-    -L "%VEINS_DIR%\src" ^
-    -L "%SIMU5G_DIR%\src" || exit /b 1
-
-echo Compiling (parallel build)...
-mingw32-make -j4 || exit /b 1
-
-if exist "out\libmultiratvanet.dll" (
-    echo.
-    echo ✓ Build successful
-    echo Output: out\libmultiratvanet.dll
-) else (
-    echo ERROR: Build completed but output not found!
+if not exist "%MSYS2_SHELL%" (
+    echo ERROR: Cannot find MSYS2 shell at: %MSYS2_SHELL%
+    pause
     exit /b 1
 )
 
-REM Run tests if --test flag
-if "%1"=="--test" (
-    echo.
-    echo Running unit tests...
-    cd "%ROOT_DIR%\tests\unit"
-    mingw32-make -j4
-)
+REM BEST APPROACH: Use OMNeT++ IDE
+echo.
+echo RECOMMENDED: Use OMNeT++ IDE for building
+echo   1. Open: %OMNETPP_ROOT%\bin\omnetpp.cmd
+echo   2. File ^> Open Projects from File System
+echo   3. Select: MultiRATVANET/framework
+echo   4. Right-click framework ^> Build Project
+echo.
+echo.
+echo OR manually open MSYS2 shell:
+echo   "%MSYS2_SHELL%" -mingw64
+echo.
+echo Then in the shell:
+echo   cd framework
+echo   mingw32-make -f GNUmakefile -j4
+echo.
+
+REM Open MSYS2 shell for manual build
+call "%MSYS2_SHELL%" -mingw64
 
 endlocal
+

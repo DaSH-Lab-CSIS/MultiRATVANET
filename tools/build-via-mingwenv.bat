@@ -15,18 +15,21 @@ REM ============================================================================
 
 setlocal enabledelayedexpansion
 
-REM Get the OMNeT++ root (two levels up from Simulation/)
+REM Get the OMNeT++ root - resolve parent directory properly
 for /f "tokens=*" %%i in ('cd') do set "PROJECT_ROOT=%%i"
-cd /d "%PROJECT_ROOT%"
 
-REM Set up paths (same as mingwenv.cmd)
-set "OMNETPP_ROOT=%PROJECT_ROOT%\..\..\..\omnetpp-5.6.1"
+REM Calculate paths using pushd/popd for proper resolution
+pushd "%PROJECT_ROOT%\.."
+for /f "tokens=*" %%i in ('cd') do set "SIMULATION_ROOT=%%i"
+popd
+
+set "OMNETPP_ROOT=%SIMULATION_ROOT%\omnetpp-5.6.1"
 set "MSYS2_SHELL=%OMNETPP_ROOT%\tools\win64\msys2_shell.cmd"
 
 echo.
-echo ╔══════════════════════════════════════════════════════════════╗
-echo ║  MultiRATVANET Build via OMNeT++ mingwenv Approach           ║
-echo ╚══════════════════════════════════════════════════════════════╝
+echo ============================================================
+echo   MultiRATVANET Build via OMNeT++ mingwenv Approach
+echo ============================================================
 echo.
 
 REM Verify OMNeT++ is available
@@ -35,11 +38,11 @@ if not exist "%OMNETPP_ROOT%" (
     echo.
     echo Expected structure:
     echo   .../Simulation/
-    echo     ├── MultiRATVANET/
-    echo     │   └── framework/
-    echo     ├── omnetpp-5.6.1/        ^← Should be here
-    echo     ├── inet-4.2.2-src/
-    echo     └── sumo-1_24_0/
+    echo     -- MultiRATVANET/
+    echo        -- framework/
+    echo     -- omnetpp-5.6.1/        (Should be here)
+    echo     -- inet-4.2.2-src/
+    echo     -- sumo-1_24_0/
     echo.
     pause
     exit /b 1
@@ -82,9 +85,9 @@ set BUILD_EXIT_CODE=!ERRORLEVEL!
 echo.
 echo.
 if !BUILD_EXIT_CODE! == 0 (
-    echo ╔══════════════════════════════════════════════════════════════╗
-    echo ║  ✅ BUILD SUCCESSFUL!                                        ║
-    echo ╚══════════════════════════════════════════════════════════════╝
+    echo ============================================================
+    echo   SUCCESS: Build completed successfully!
+    echo ============================================================
     echo.
     echo Output: framework\out\libmultiratvanet.dll
     
