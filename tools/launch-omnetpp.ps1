@@ -1,4 +1,4 @@
-# Launch OMNeT++ IDE
+# Launch OMNeT++ Build Environment
 # PowerShell version
 
 param([switch]$Shell = $false)
@@ -9,7 +9,7 @@ $OmnetppRoot = Join-Path $SimulationRoot "omnetpp-5.6.1"
 
 Write-Host ""
 Write-Host "============================================================"
-Write-Host "  OMNeT++ IDE Launcher"
+Write-Host "  OMNeT++ Build Environment"
 Write-Host "============================================================"
 Write-Host ""
 Write-Host "OMNeT++ Root: $OmnetppRoot"
@@ -27,11 +27,15 @@ if (-not (Test-Path $MingwenvCmd)) {
     exit 1
 }
 
-Write-Host "Launching OMNeT++ environment..." -ForegroundColor Green
+Write-Host "Launching build environment..." -ForegroundColor Green
 Write-Host ""
-Write-Host "Inside the MSYS2 shell, run one of:"
-Write-Host "  cd bin && omnetpp.cmd     (launch IDE)"
-Write-Host "  bin/omnetpp.cmd           (launch IDE)"
+Write-Host "BUILD THE FRAMEWORK:"
+Write-Host "  cd MultiRATVANET/framework"
+Write-Host "  make -j4"
+Write-Host ""
+Write-Host "RUN A SIMULATION:"
+Write-Host "  cd MultiRATVANET/simulations"
+Write-Host "  omnetpp -u Cmdenv -c Highway_CoveragePriority omnetpp.ini"
 Write-Host ""
 
 # Launch mingwenv shell
