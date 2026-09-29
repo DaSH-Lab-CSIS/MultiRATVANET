@@ -1,0 +1,59 @@
+# Build artifacts
+build/
+out/
+*.dll
+*.so
+*.a
+*.o
+*.obj
+*.exe
+*.lib
+Makefile
+Makefile.inc
+
+# OMNeT++ IDE
+.oppbuildspec
+.project
+.cproject
+.settings/
+.cmdenv-log
+
+# Results (exclude large files, keep metadata)
+results/**/*.sca
+results/**/*.vec
+results/**/*.txt
+
+# IDE
+.vscode/
+.idea/
+*.user
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.env
+.venv
+venv/
+
+# Temporary
+temp/
+tmp/
+*.log
+*.tmp
+
+# SUMO & TraCI
+*.sumocfg.bak
+*.traci_pid
+
+# Analysis outputs (keep summaries, not data)
+*.png
+*.pdf
+*.eps
+plots/
+*.csv~

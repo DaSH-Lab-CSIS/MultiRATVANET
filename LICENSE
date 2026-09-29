@@ -1,0 +1,16 @@
+Research License
+
+Copyright (c) 2026 [Your Institution]
+
+This software is provided for research and educational purposes only.
+Redistribution and use in source and binary forms are permitted.
+Commercial use requires explicit written permission.
+
+See individual component licenses:
+- OMNeT++: Academic Public License (APL)
+- INET: GNU General Public License v2 (GPL-2)
+- Veins: GNU General Public License v2 (GPL-2)
+- Simu5G: GNU General Public License v3 (GPL-3)
+- SUMO: Eclipse Public License v2 (EPL-2)
+
+THIS SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND.

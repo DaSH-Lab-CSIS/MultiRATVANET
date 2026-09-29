@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Urban Grid Network: 5x5 blocks, 2km x 2km, 400m spacing -->
+<net version="1.9" junctionCornerDetail="5" limitTurnSpeed="5.50" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/net_file.xsd">
+
+    <location netOffset="0.00,0.00" convBoundary="0.00,0.00,2000.00,2000.00" origBoundary="0.00,0.00,2000.00,2000.00" projParameter="!"/>
+
+    <!-- Junctions (intersections in 5x5 grid) -->
+    <junction id="J_0_0" type="traffic_light" x="0.00" y="0.00" incLanes="" intLanes="" shape="0.00,0.00"/>
+    <junction id="J_0_1" type="traffic_light" x="0.00" y="400.00" incLanes="" intLanes="" shape="0.00,400.00"/>
+    <junction id="J_0_2" type="traffic_light" x="0.00" y="800.00" incLanes="" intLanes="" shape="0.00,800.00"/>
+    <junction id="J_0_3" type="traffic_light" x="0.00" y="1200.00" incLanes="" intLanes="" shape="0.00,1200.00"/>
+    <junction id="J_0_4" type="traffic_light" x="0.00" y="1600.00" incLanes="" intLanes="" shape="0.00,1600.00"/>
+    <junction id="J_0_5" type="traffic_light" x="0.00" y="2000.00" incLanes="" intLanes="" shape="0.00,2000.00"/>
+
+    <junction id="J_1_0" type="traffic_light" x="400.00" y="0.00" incLanes="" intLanes="" shape="400.00,0.00"/>
+    <junction id="J_1_1" type="traffic_light" x="400.00" y="400.00" incLanes="" intLanes="" shape="400.00,400.00"/>
+    <junction id="J_1_2" type="traffic_light" x="400.00" y="800.00" incLanes="" intLanes="" shape="400.00,800.00"/>
+    <junction id="J_1_3" type="traffic_light" x="400.00" y="1200.00" incLanes="" intLanes="" shape="400.00,1200.00"/>
+    <junction id="J_1_4" type="traffic_light" x="400.00" y="1600.00" incLanes="" intLanes="" shape="400.00,1600.00"/>
+    <junction id="J_1_5" type="traffic_light" x="400.00" y="2000.00" incLanes="" intLanes="" shape="400.00,2000.00"/>
+
+    <junction id="J_2_0" type="traffic_light" x="800.00" y="0.00" incLanes="" intLanes="" shape="800.00,0.00"/>
+    <junction id="J_2_1" type="traffic_light" x="800.00" y="400.00" incLanes="" intLanes="" shape="800.00,400.00"/>
+    <junction id="J_2_2" type="traffic_light" x="800.00" y="800.00" incLanes="" intLanes="" shape="800.00,800.00"/>
+    <junction id="J_2_3" type="traffic_light" x="800.00" y="1200.00" incLanes="" intLanes="" shape="800.00,1200.00"/>
+    <junction id="J_2_4" type="traffic_light" x="800.00" y="1600.00" incLanes="" intLanes="" shape="800.00,1600.00"/>
+    <junction id="J_2_5" type="traffic_light" x="800.00" y="2000.00" incLanes="" intLanes="" shape="800.00,2000.00"/>
+
+    <junction id="J_3_0" type="traffic_light" x="1200.00" y="0.00" incLanes="" intLanes="" shape="1200.00,0.00"/>
+    <junction id="J_3_1" type="traffic_light" x="1200.00" y="400.00" incLanes="" intLanes="" shape="1200.00,400.00"/>
+    <junction id="J_3_2" type="traffic_light" x="1200.00" y="800.00" incLanes="" intLanes="" shape="1200.00,800.00"/>
+    <junction id="J_3_3" type="traffic_light" x="1200.00" y="1200.00" incLanes="" intLanes="" shape="1200.00,1200.00"/>
+    <junction id="J_3_4" type="traffic_light" x="1200.00" y="1600.00" incLanes="" intLanes="" shape="1200.00,1600.00"/>
+    <junction id="J_3_5" type="traffic_light" x="1200.00" y="2000.00" incLanes="" intLanes="" shape="1200.00,2000.00"/>
+
+    <junction id="J_4_0" type="traffic_light" x="1600.00" y="0.00" incLanes="" intLanes="" shape="1600.00,0.00"/>
+    <junction id="J_4_1" type="traffic_light" x="1600.00" y="400.00" incLanes="" intLanes="" shape="1600.00,400.00"/>
+    <junction id="J_4_2" type="traffic_light" x="1600.00" y="800.00" incLanes="" intLanes="" shape="1600.00,800.00"/>
+    <junction id="J_4_3" type="traffic_light" x="1600.00" y="1200.00" incLanes="" intLanes="" shape="1600.00,1200.00"/>
+    <junction id="J_4_4" type="traffic_light" x="1600.00" y="1600.00" incLanes="" intLanes="" shape="1600.00,1600.00"/>
+    <junction id="J_4_5" type="traffic_light" x="1600.00" y="2000.00" incLanes="" intLanes="" shape="1600.00,2000.00"/>
+
+    <junction id="J_5_0" type="traffic_light" x="2000.00" y="0.00" incLanes="" intLanes="" shape="2000.00,0.00"/>
+    <junction id="J_5_1" type="traffic_light" x="2000.00" y="400.00" incLanes="" intLanes="" shape="2000.00,400.00"/>
+    <junction id="J_5_2" type="traffic_light" x="2000.00" y="800.00" incLanes="" intLanes="" shape="2000.00,800.00"/>
+    <junction id="J_5_3" type="traffic_light" x="2000.00" y="1200.00" incLanes="" intLanes="" shape="2000.00,1200.00"/>
+    <junction id="J_5_4" type="traffic_light" x="2000.00" y="1600.00" incLanes="" intLanes="" shape="2000.00,1600.00"/>
+    <junction id="J_5_5" type="traffic_light" x="2000.00" y="2000.00" incLanes="" intLanes="" shape="2000.00,2000.00"/>
+
+    <!-- Edges (roads) - Horizontal (E-W) -->
+    <edge id="E_0_0_E" from="J_0_0" to="J_1_0" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_0_0_W" from="J_1_0" to="J_0_0" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_0_1_E" from="J_0_1" to="J_1_1" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_0_1_W" from="J_1_1" to="J_0_1" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_0_2_E" from="J_0_2" to="J_1_2" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_0_2_W" from="J_1_2" to="J_0_2" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_0_3_E" from="J_0_3" to="J_1_3" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_0_3_W" from="J_1_3" to="J_0_3" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_0_4_E" from="J_0_4" to="J_1_4" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_0_4_W" from="J_1_4" to="J_0_4" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_0_5_E" from="J_0_5" to="J_1_5" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_0_5_W" from="J_1_5" to="J_0_5" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+
+    <edge id="E_1_0_E" from="J_1_0" to="J_2_0" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_1_0_W" from="J_2_0" to="J_1_0" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_1_1_E" from="J_1_1" to="J_2_1" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_1_1_W" from="J_2_1" to="J_1_1" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_1_2_E" from="J_1_2" to="J_2_2" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_1_2_W" from="J_2_2" to="J_1_2" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_1_3_E" from="J_1_3" to="J_2_3" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_1_3_W" from="J_2_3" to="J_1_3" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_1_4_E" from="J_1_4" to="J_2_4" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_1_4_W" from="J_2_4" to="J_1_4" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_1_5_E" from="J_1_5" to="J_2_5" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_1_5_W" from="J_2_5" to="J_1_5" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+
+    <edge id="E_2_0_E" from="J_2_0" to="J_3_0" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_2_0_W" from="J_3_0" to="J_2_0" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_2_1_E" from="J_2_1" to="J_3_1" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_2_1_W" from="J_3_1" to="J_2_1" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_2_2_E" from="J_2_2" to="J_3_2" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_2_2_W" from="J_3_2" to="J_2_2" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_2_3_E" from="J_2_3" to="J_3_3" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_2_3_W" from="J_3_3" to="J_2_3" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_2_4_E" from="J_2_4" to="J_3_4" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_2_4_W" from="J_3_4" to="J_2_4" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_2_5_E" from="J_2_5" to="J_3_5" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_2_5_W" from="J_3_5" to="J_2_5" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+
+    <edge id="E_3_0_E" from="J_3_0" to="J_4_0" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_3_0_W" from="J_4_0" to="J_3_0" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_3_1_E" from="J_3_1" to="J_4_1" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_3_1_W" from="J_4_1" to="J_3_1" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_3_2_E" from="J_3_2" to="J_4_2" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_3_2_W" from="J_4_2" to="J_3_2" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_3_3_E" from="J_3_3" to="J_4_3" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_3_3_W" from="J_4_3" to="J_3_3" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_3_4_E" from="J_3_4" to="J_4_4" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_3_4_W" from="J_4_4" to="J_3_4" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_3_5_E" from="J_3_5" to="J_4_5" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_3_5_W" from="J_4_5" to="J_3_5" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+
+    <edge id="E_4_0_E" from="J_4_0" to="J_5_0" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_4_0_W" from="J_5_0" to="J_4_0" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_4_1_E" from="J_4_1" to="J_5_1" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_4_1_W" from="J_5_1" to="J_4_1" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_4_2_E" from="J_4_2" to="J_5_2" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_4_2_W" from="J_5_2" to="J_4_2" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_4_3_E" from="J_4_3" to="J_5_3" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_4_3_W" from="J_5_3" to="J_4_3" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_4_4_E" from="J_4_4" to="J_5_4" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_4_4_W" from="J_5_4" to="J_4_4" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_4_5_E" from="J_4_5" to="J_5_5" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_4_5_W" from="J_5_5" to="J_4_5" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+
+    <!-- Edges (roads) - Vertical (N-S) -->
+    <edge id="E_0_0_N" from="J_0_0" to="J_0_1" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_0_0_S" from="J_0_1" to="J_0_0" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_0_1_N" from="J_0_1" to="J_0_2" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_0_1_S" from="J_0_2" to="J_0_1" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_0_2_N" from="J_0_2" to="J_0_3" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_0_2_S" from="J_0_3" to="J_0_2" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_0_3_N" from="J_0_3" to="J_0_4" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_0_3_S" from="J_0_4" to="J_0_3" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_0_4_N" from="J_0_4" to="J_0_5" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_0_4_S" from="J_0_5" to="J_0_4" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+
+    <edge id="E_1_0_N" from="J_1_0" to="J_1_1" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_1_0_S" from="J_1_1" to="J_1_0" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_1_1_N" from="J_1_1" to="J_1_2" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_1_1_S" from="J_1_2" to="J_1_1" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_1_2_N" from="J_1_2" to="J_1_3" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_1_2_S" from="J_1_3" to="J_1_2" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_1_3_N" from="J_1_3" to="J_1_4" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_1_3_S" from="J_1_4" to="J_1_3" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_1_4_N" from="J_1_4" to="J_1_5" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_1_4_S" from="J_1_5" to="J_1_4" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+
+    <edge id="E_2_0_N" from="J_2_0" to="J_2_1" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_2_0_S" from="J_2_1" to="J_2_0" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_2_1_N" from="J_2_1" to="J_2_2" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_2_1_S" from="J_2_2" to="J_2_1" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_2_2_N" from="J_2_2" to="J_2_3" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_2_2_S" from="J_2_3" to="J_2_2" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_2_3_N" from="J_2_3" to="J_2_4" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_2_3_S" from="J_2_4" to="J_2_3" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_2_4_N" from="J_2_4" to="J_2_5" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_2_4_S" from="J_2_5" to="J_2_4" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+
+    <edge id="E_3_0_N" from="J_3_0" to="J_3_1" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_3_0_S" from="J_3_1" to="J_3_0" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_3_1_N" from="J_3_1" to="J_3_2" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_3_1_S" from="J_3_2" to="J_3_1" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_3_2_N" from="J_3_2" to="J_3_3" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_3_2_S" from="J_3_3" to="J_3_2" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_3_3_N" from="J_3_3" to="J_3_4" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_3_3_S" from="J_3_4" to="J_3_3" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_3_4_N" from="J_3_4" to="J_3_5" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_3_4_S" from="J_3_5" to="J_3_4" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+
+    <edge id="E_4_0_N" from="J_4_0" to="J_4_1" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_4_0_S" from="J_4_1" to="J_4_0" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_4_1_N" from="J_4_1" to="J_4_2" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_4_1_S" from="J_4_2" to="J_4_1" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_4_2_N" from="J_4_2" to="J_4_3" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_4_2_S" from="J_4_3" to="J_4_2" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_4_3_N" from="J_4_3" to="J_4_4" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_4_3_S" from="J_4_4" to="J_4_3" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_4_4_N" from="J_4_4" to="J_4_5" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_4_4_S" from="J_4_5" to="J_4_4" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+
+    <edge id="E_5_0_N" from="J_5_0" to="J_5_1" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_5_0_S" from="J_5_1" to="J_5_0" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_5_1_N" from="J_5_1" to="J_5_2" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_5_1_S" from="J_5_2" to="J_5_1" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_5_2_N" from="J_5_2" to="J_5_3" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_5_2_S" from="J_5_3" to="J_5_2" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_5_3_N" from="J_5_3" to="J_5_4" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_5_3_S" from="J_5_4" to="J_5_3" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_5_4_N" from="J_5_4" to="J_5_5" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+    <edge id="E_5_4_S" from="J_5_5" to="J_5_4" priority="10" numLanes="2" speed="13.89" length="400.00"/>
+
+</net>

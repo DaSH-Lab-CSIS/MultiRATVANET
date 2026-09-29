@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Veins launch daemon config for UrbanGrid scenario -->
+<launch>
+    <simulation>
+        <directory>.</directory>
+        <config>UrbanGrid.sumocfg</config>
+        <seed>42</seed>
+        <port>9998</port>
+        <host>localhost</host>
+        <delay>0.1</delay>
+    </simulation>
+</launch>

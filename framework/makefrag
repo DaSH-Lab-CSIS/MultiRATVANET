@@ -1,0 +1,5 @@
+# Custom make fragment for MultiRatVanet.
+#
+# The .msg files use msg6 syntax (import / extends inet::... chunks), so the
+# message compiler must be invoked with --msg6.
+MSGC:=$(MSGC) --msg6
