@@ -1,23 +1,26 @@
 @echo off
 REM ============================================================================
-REM Launch OMNeT++ IDE via external junction
-REM ============================================================================
-REM
-REM This script launches OMNeT++ IDE using the external/ junction, keeping
-REM everything organized and avoiding duplicate paths.
-REM
-REM Usage:
-REM   .\launch-omnetpp.bat                (launch IDE)
-REM   .\launch-omnetpp.bat shell          (open MinGW shell)
-REM
+REM Launch OMNeT++ IDE using mingwenv
 REM ============================================================================
 
-cd /d "%~dp0.."
+cd /d "%~dp0..\.."
+set OMNETPP_ROOT=%CD%\omnetpp-5.6.1
 
-if "%1" == "shell" (
-    REM Open MinGW shell via mingwenv
-    .\external\omnetpp-5.6.1\mingwenv.cmd
-) else (
-    REM Launch IDE
-    .\external\omnetpp-5.6.1\bin\omnetpp.cmd
-)
+echo.
+echo ============================================================
+echo   Launching OMNeT++ Environment
+echo ============================================================
+echo.
+echo OMNeT++ Root: %OMNETPP_ROOT%
+echo.
+echo After the shell opens, you can:
+echo   - Run: bin\omnetpp.cmd         (to launch IDE)
+echo   - Or run: make -j4              (to build)
+echo.
+
+REM Launch mingwenv to set up environment
+call "%OMNETPP_ROOT%\mingwenv.cmd"
+
+
+
+
