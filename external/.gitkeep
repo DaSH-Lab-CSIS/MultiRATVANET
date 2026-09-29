@@ -1,0 +1,12 @@
+# This directory contains framework junctions/symlinks
+# These link to:
+#   - omnetpp-5.6.1/        → ../../omnetpp-5.6.1
+#   - inet-4.2.2/           → ../../inet-4.2.2-src/inet4
+#   - veins-5.2/            → ../../veins-5.2/veins-veins-5.2
+#   - simu5g-1.1.0/         → ../../Simu5G-1.1.0/Simu5G-1.1.0
+#
+# Junctions are created by the setup script or manually with:
+#   mklink /J external\<name> <target>
+#
+# On systems without admin privileges, GNUmakefile falls back
+# to direct workspace paths.
