@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Veins launch daemon config for MultiRatHighway scenario -->
+<launch>
+    <basedir path="simulations/scenarios/highway"/>
+    <copy file="multiRatHighway.net.xml"/>
+    <copy file="multiRatHighway.rou.xml"/>
+    <copy file="multiRatHighway.sumocfg" type="config"/>
+    <copy file="gui-settings.xml"/>
+</launch>

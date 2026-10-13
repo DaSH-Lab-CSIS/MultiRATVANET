@@ -57,3 +57,12 @@ tmp/
 *.eps
 plots/
 *.csv~
+
+# Vendored dependencies (Windows junctions to the workspace copies — never commit)
+/external/*/
+!/external/.gitkeep
+!/external/README.md
+
+# Simulation outputs & runtime state
+simulations/results/
+.qtenvrc

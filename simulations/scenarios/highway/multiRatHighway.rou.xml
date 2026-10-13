@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Traffic demand for the MultiRatVanet straight highway.
+
+    Vehicles are inserted as two steady flows (eastbound on E0, westbound on E1)
+    over the first 60 s of simulation. maxSpeed = 20 m/s (72 km/h) so a car
+    crosses the 2 km road in ~100 s, passing multiple RSUs/APs and cellular cells
+    and triggering RAT handovers. The vType id "car" matches
+    veinsManager.moduleName in omnetpp.ini.
+-->
+<routes>
+    <vType id="car" accel="2.6" decel="4.5" sigma="0.5" length="4.5" minGap="2.5"
+           maxSpeed="20.0" guiShape="passenger"/>
+
+    <route id="east" edges="E0"/>
+    <route id="west" edges="E1"/>
+
+    <!-- One eastbound car every 6 s, one westbound every 9 s. -->
+    <flow id="flowEast" type="car" route="east" begin="0" end="60" period="6"/>
+    <flow id="flowWest" type="car" route="west" begin="0" end="60" period="9"/>
+</routes>

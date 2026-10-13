@@ -10,7 +10,7 @@
 #ifndef MULTIRATVANET_IRATSELECTIONPOLICY_H
 #define MULTIRATVANET_IRATSELECTIONPOLICY_H
 
-#include "RatTypes.h"
+#include "base/RatTypes.h"
 
 namespace multiratvanet {
 

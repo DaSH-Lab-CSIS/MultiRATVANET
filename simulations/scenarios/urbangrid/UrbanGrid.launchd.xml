@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Veins launch daemon config for UrbanGrid scenario -->
+<launch>
+    <basedir path="simulations/scenarios/urbangrid"/>
+    <copy file="UrbanGrid.net.xml"/>
+    <copy file="UrbanGrid.rou.xml"/>
+    <copy file="UrbanGrid.sumocfg" type="config"/>
+    <copy file="gui-settings.xml"/>
+</launch>

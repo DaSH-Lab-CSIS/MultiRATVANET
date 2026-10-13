@@ -6,7 +6,7 @@
 
 #include <omnetpp.h>
 #include <vector>
-#include "RatTypes.h"
+#include "base/RatTypes.h"
 
 namespace inet { class IMobility; }
 

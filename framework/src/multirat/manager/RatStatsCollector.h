@@ -14,7 +14,7 @@
 #define MULTIRATVANET_RATSTATSCOLLECTOR_H
 
 #include <omnetpp.h>
-#include "RatTypes.h"
+#include "base/RatTypes.h"
 
 namespace multiratvanet {
 

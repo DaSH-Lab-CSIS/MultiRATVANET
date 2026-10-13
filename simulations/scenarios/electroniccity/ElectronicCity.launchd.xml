@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Veins launch daemon config for ElectronicCity scenario (Bangalore OSM) -->
+<launch>
+    <basedir path="simulations/scenarios/electroniccity"/>
+    <copy file="ElectronicCity.net.xml"/>
+    <copy file="ElectronicCity.rou.xml"/>
+    <copy file="ElectronicCity.sumocfg" type="config"/>
+    <copy file="gui-settings.xml"/>
+</launch>

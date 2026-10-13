@@ -7,7 +7,7 @@
 #include <omnetpp.h>
 #include <memory>
 #include <string>
-#include "RatTypes.h"
+#include "base/RatTypes.h"
 #include "policies/IRatSelectionPolicy.h"
 
 namespace inet { class IInterfaceTable; class IIpv4RoutingTable; }

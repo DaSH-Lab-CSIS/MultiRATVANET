@@ -3,3 +3,9 @@
 # The .msg files use msg6 syntax (import / extends inet::... chunks), so the
 # message compiler must be invoked with --msg6.
 MSGC:=$(MSGC) --msg6
+
+# The MinGW import libraries for INET, veins_inet and Simu5G each carry INET
+# import descriptors; linking them together produces duplicate __imp_ symbol
+# definitions. These descriptors are identical, so let the linker keep the
+# first one instead of erroring out.
+LDFLAGS += -Wl,--allow-multiple-definition

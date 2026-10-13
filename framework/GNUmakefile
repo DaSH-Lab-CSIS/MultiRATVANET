@@ -6,6 +6,7 @@
 # ============================================================================
 
 ROOT_DIR = ..
+WORKSPACE_DIR = $(ROOT_DIR)/..
 FRAMEWORK_DIR = .
 SRC_DIR = src
 OUT_DIR = out
@@ -14,16 +15,17 @@ OUT_DIR = out
 INET_PATH = $(ROOT_DIR)/external/inet-4.2.2
 VEINS_PATH = $(ROOT_DIR)/external/veins-5.2
 SIMU5G_PATH = $(ROOT_DIR)/external/simu5g-1.1.0
+OMNETPP_PATH = $(WORKSPACE_DIR)/omnetpp-5.6.1
 
 # Fallback to workspace paths if external symlinks don't exist
 ifeq ($(wildcard $(INET_PATH)),)
-    INET_PATH = $(ROOT_DIR)/inet-4.2.2-src/inet4
+    INET_PATH = $(WORKSPACE_DIR)/inet-4.2.2-src/inet4
 endif
 ifeq ($(wildcard $(VEINS_PATH)),)
-    VEINS_PATH = $(ROOT_DIR)/veins-5.2/veins-veins-5.2
+    VEINS_PATH = $(WORKSPACE_DIR)/veins-5.2/veins-veins-5.2
 endif
 ifeq ($(wildcard $(SIMU5G_PATH)),)
-    SIMU5G_PATH = $(ROOT_DIR)/Simu5G-1.1.0/Simu5G-1.1.0
+    SIMU5G_PATH = $(WORKSPACE_DIR)/Simu5G-1.1.0/Simu5G-1.1.0
 endif
 
 # ============================================================================
@@ -65,16 +67,43 @@ OBJECTS = $(SOURCES:src/multirat/%.cc=$(OUT_DIR)/%.o)
 CXX = g++
 CXXFLAGS = -std=c++11 -fPIC -Wall -Wextra -O2
 CPPFLAGS = -I$(SRC_DIR) \
+           -I$(SRC_DIR)/multirat \
+           -I$(SRC_DIR)/multirat/base \
+           -I$(SRC_DIR)/multirat/apps \
+           -I$(SRC_DIR)/multirat/manager \
+           -I$(SRC_DIR)/multirat/monitor \
+           -I$(SRC_DIR)/multirat/policies \
+           -I$(SRC_DIR)/multirat/core \
+           -I$(OMNETPP_PATH)/include \
            -I$(INET_PATH)/src \
            -I$(VEINS_PATH)/src \
            -I$(SIMU5G_PATH)/src
 
 LD = g++
-LDFLAGS = -shared -L$(OUT_DIR) \
-          -L$(INET_PATH)/src \
-          -L$(VEINS_PATH)/src \
-          -L$(SIMU5G_PATH)/src
-LIBS = -linet -lveins -lsimu5g -lm
+AR = ar
+ARFLAGS = rcs
+
+# ============================================================================
+# SOLUTION: Build as STATIC LIBRARY (.a) instead of DLL
+# ============================================================================
+# Why? 
+#  - INET/Veins/Simu5G are NOT compiled (no .dll or .a files available)
+#  - We can't link against non-existent libraries
+#  - Static library (.a) lets us package object files for OMNeT++ to link
+#  - OMNeT++ IDE will handle final DLL creation when building simulation
+#
+# This approach works with:
+#  - OMNeT++ IDE's makefile-based projects
+#  - Standard OMNeT++ project structure
+#  - No external library dependencies needed at build time
+# ============================================================================
+
+# Target: static library (.a) instead of DLL
+TARGET_LIB = out/libmultiratvanet.a
+
+# No linker flags needed for static library - just use AR (archiver)
+LDFLAGS = 
+LIBS = 
 
 # MSG compiler (from OMNeT++)
 MSGC = opp_msgc --msg6
@@ -83,19 +112,21 @@ MSGC = opp_msgc --msg6
 # TARGETS
 # ============================================================================
 
-TARGET_LIB = $(OUT_DIR)/libmultiratvanet.dll
+# BUILD AS STATIC LIBRARY (.a) for OMNeT++ linking
+# This avoids linker errors from undefined INET/Veins symbols
+TARGET_LIB = $(OUT_DIR)/libmultiratvanet.a
 TARGET_SO = $(OUT_DIR)/libmultiratvanet.so
 TARGET_A = $(OUT_DIR)/libmultiratvanet.a
 
-# Detect OS
+# Detect OS - use static library on all platforms for compatibility
 ifeq ($(OS),Windows_NT)
-    TARGET = $(TARGET_LIB)
+    TARGET = $(TARGET_A)
 else
     UNAME := $(shell uname -s)
     ifeq ($(UNAME),Linux)
-        TARGET = $(TARGET_SO)
+        TARGET = $(TARGET_A)
     else ifeq ($(UNAME),Darwin)
-        TARGET = $(TARGET_SO)
+        TARGET = $(TARGET_A)
     endif
 endif
 
@@ -117,12 +148,17 @@ $(OUT_DIR)/%.o: src/multirat/%.cc | $(OUT_DIR)
 	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -c $< -o $@
 
 $(TARGET_LIB): $(OBJECTS) | $(OUT_DIR)
-	@echo "Linking $@..."
-	$(LD) $(LDFLAGS) -o $@ $(OBJECTS) $(LIBS)
+	@echo "Archiving $@..."
+	$(AR) $(ARFLAGS) $@ $(OBJECTS)
+	@echo "✓ Static library created: $@"
+	@echo "  Use with OMNeT++ IDE:"
+	@echo "    1. Add to simulation project makefile"
+	@echo "    2. Link with: -L$(OUT_DIR) -lmultiratvanet"
+	@echo "    3. OMNeT++ IDE will resolve INET/Veins/Simu5G symbols"
 
 $(TARGET_SO): $(OBJECTS) | $(OUT_DIR)
-	@echo "Linking $@..."
-	$(LD) $(LDFLAGS) -o $@ $(OBJECTS) $(LIBS)
+	@echo "Archiving $@..."
+	$(AR) $(ARFLAGS) $@ $(OBJECTS)
 
 clean:
 	@echo "Cleaning..."

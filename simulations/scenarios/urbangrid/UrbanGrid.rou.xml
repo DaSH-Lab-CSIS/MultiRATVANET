@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Urban Grid Routes: 40 vehicles, random trips over 120 seconds -->
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">
+
+    <!-- Vehicle type: standard passenger car -->
+    <vType id="car" accel="0.8" decel="4.5" sigma="0.2" length="5.0" minGap="2.5" maxSpeed="13.89"/>
+
+    <!-- Flow: generate 40 random-route vehicles over simulation duration -->
+    <flow id="vehicles" type="car" begin="0" end="30" period="0.75" number="40" departSpeed="max">
+        <route edges="E_0_0_E E_0_0_N E_0_1_E E_1_1_E E_1_1_N E_1_2_E E_2_2_E E_2_2_N E_2_3_E E_3_3_E E_3_3_N E_3_4_E"/>
+        <route edges="E_1_1_E E_1_1_N E_1_2_E E_2_2_E E_2_2_N E_2_3_E"/>
+        <route edges="E_2_2_E E_2_2_N E_2_3_E E_2_3_N E_2_4_E"/>
+        <route edges="E_3_0_E E_3_0_N E_3_1_E E_3_1_N E_3_2_E E_3_2_N E_3_3_E"/>
+        <route edges="E_0_1_E E_0_1_N E_0_2_E E_1_2_E E_1_2_N E_1_3_E E_2_3_E E_2_3_N E_2_4_E"/>
+    </flow>
+
+</routes>
