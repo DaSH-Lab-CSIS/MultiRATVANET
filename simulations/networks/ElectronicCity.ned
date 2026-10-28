@@ -8,7 +8,7 @@
 package multiratvanet.simulations;
 
 import inet.node.ethernet.Eth10G;
-import simu5g.nodes.NR.gNodeB;
+import simu5g.nodes.gNodeB;
 
 network ElectronicCity extends MultiRatHighway
 {

@@ -1,0 +1,1 @@
+../core/SixGInterface.ned

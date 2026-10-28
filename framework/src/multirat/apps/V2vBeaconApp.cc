@@ -13,7 +13,7 @@
 #include "inet/networklayer/contract/IInterfaceTable.h"
 #include "inet/networklayer/contract/ipv4/Ipv4Address.h"
 #include "inet/networklayer/ipv4/Ipv4InterfaceData.h"
-#include "inet/physicallayer/contract/packetlevel/IRadio.h"
+#include "inet/physicallayer/wireless/common/contract/packetlevel/IRadio.h"
 
 namespace multiratvanet {
 
@@ -60,7 +60,7 @@ void V2vBeaconApp::handleStartOperation(LifecycleOperation *)
 
     // Resolve the dedicated V2V (ad-hoc DSRC) interface and pin egress to it.
     IInterfaceTable *ift = getModuleFromPar<IInterfaceTable>(par("interfaceTableModule"), this);
-    InterfaceEntry *ie = ift->findInterfaceByName(v2vInterfaceName);
+    NetworkInterface *ie = ift->findInterfaceByName(v2vInterfaceName);
     if (ie == nullptr)
         throw cRuntimeError("V2vBeaconApp: V2V interface '%s' not found", v2vInterfaceName);
     v2vInterfaceId = ie->getInterfaceId();
@@ -69,7 +69,7 @@ void V2vBeaconApp::handleStartOperation(LifecycleOperation *)
     // and the per-car HostAutoConfigurator only addresses the cellular interface, so
     // the ad-hoc V2V interface has no IPv4 identity. Give it one on a dedicated V2V
     // subnet so it can source/receive the multicast beacons.
-    auto ipv4Data = ie->findProtocolData<Ipv4InterfaceData>();
+    auto ipv4Data = ie->findProtocolDataForUpdate<Ipv4InterfaceData>();
     if (ipv4Data == nullptr)
         ipv4Data = ie->addProtocolData<Ipv4InterfaceData>();
     if (ipv4Data->getIPAddress().isUnspecified()) {

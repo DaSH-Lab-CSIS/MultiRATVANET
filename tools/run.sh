@@ -35,7 +35,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-RESULTS_DIR="$ROOT_DIR/results/${CONFIG}_$(date +%Y%m%d_%H%M%S)"
+RESULTS_DIR="${RESULTS_ROOT:-$ROOT_DIR/results}/${CONFIG}_$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$RESULTS_DIR"
 
 echo ""
@@ -50,14 +50,14 @@ cp "$ROOT_DIR/simulations/omnetpp.ini" "$RESULTS_DIR/run-settings.ini"
 
 # Run simulation
 cd "$ROOT_DIR"
-"$ROOT_DIR/framework/out/MultiRatVanet" \
+"$ROOT_DIR/framework/out/clang-release/framework" \
+    "$ROOT_DIR/simulations/omnetpp.ini" \
     -c "$CONFIG" \
     -u Cmdenv \
-    -n "simulations:framework/src" \
+    -n "simulations/networks:framework/src/multirat/_ned:${INET_DIR:-/home/vnet/vehicular-sim/inet-4.6.0}/src:${VEINS_DIR:-/home/vnet/vehicular-sim/veins-5.3.1}/src/veins:${VEINS_DIR:-/home/vnet/vehicular-sim/veins-5.3.1}/subprojects/veins_inet/src/veins_inet:${SIMU5G_DIR:-/home/vnet/vehicular-sim/simu5g-1.7.0}/src:${SIMU5G_DIR:-/home/vnet/vehicular-sim/simu5g-1.7.0}/simulations" \
     --sim-time-limit="$SIM_TIME" \
-    -r 0 \
-    **.vector-recording=true \
-    **.scalar-recording=true
+    ${RESULTS_ROOT:+--result-dir="$RESULTS_DIR"} \
+    -r 0
 
 echo ""
 echo "✓ Simulation complete"
