@@ -1,0 +1,13 @@
+.git
+# generated in-image
+framework/out
+framework/framework
+framework/Makefile
+framework/Makefile.inc
+# outputs, never in the image (simulations/results is ~15 GB)
+results
+simulations/results
+all_metrics_summary.csv
+**/*.sca
+**/*.vec
+**/*.vci

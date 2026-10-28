@@ -1,0 +1,55 @@
+# DRAFT adapter manifest — schema "dash-adapter/0". Provisional until a second, different tool is onboarded.
+# The dashboard reads this file; it must not contain MultiRATVANET-specific code.
+schema: dash-adapter/0
+tool:
+  name: MultiRATVANET
+  description: Multi-RAT VANET handover framework (OMNeT++/Veins/INET/Simu5G/SUMO)
+# image tag + exact repo commit come from the image labels (dash.repo.commit / dash.repo.dirty), not from here
+
+run:
+  # one job = one command inside the container; {placeholders} are filled from the job request
+  command: ["./tools/run.sh", "{omnetpp_config}", "--sim-time-limit={sim_time}"]
+  working_dir: /workspace
+  env:
+    RESULTS_ROOT: /results/{job_id}      # runner sets this per job
+  params:
+    sim_time: {type: duration, default: 70s, description: Simulation time limit}
+
+outputs:
+  # raw files are always kept and downloadable
+  - {kind: omnetpp-scalar, glob: "**/*.sca"}
+  - {kind: omnetpp-vector, glob: "**/*.vec"}
+  - {kind: omnetpp-index,  glob: "**/*.vci"}
+  - {kind: ini-snapshot,   glob: "**/run-settings.ini"}
+# TODO: metrics_adapter — maps .sca/.vec into the standard metrics schema (handover count, latency, outage, loss, throughput)
+
+scenarios:            # data, not code
+  - {id: highway,         description: Highway baseline,  sumo: simulations/scenarios/highway}
+  - {id: urbangrid,       description: Synthetic urban grid, sumo: simulations/scenarios/urbangrid}
+  - {id: electroniccity,  description: Electronic City (real OSM), sumo: simulations/scenarios/electroniccity}
+
+algorithms:
+  - {id: coverage_priority, description: Coverage priority}
+  - {id: sinr,              description: SINR-based}
+  - {id: latency_qos,       description: Latency/QoS-based}
+  - {id: load,              description: Load-balanced}
+  - {id: ensemble,          description: Ensemble voting}
+  - {id: ml,                description: ML-driven policy}
+
+# (scenario, algorithm) -> omnetpp config. Config names are inconsistent in omnetpp.ini, so this is an explicit map.
+runs:
+  - {scenario: highway,        algorithm: coverage_priority, omnetpp_config: CoveragePriority}
+  - {scenario: highway,        algorithm: sinr,              omnetpp_config: Sinr}
+  - {scenario: highway,        algorithm: latency_qos,       omnetpp_config: LatencyQos}
+  - {scenario: highway,        algorithm: load,              omnetpp_config: Load}
+  - {scenario: highway,        algorithm: ml,                omnetpp_config: Ml}
+  - {scenario: highway,        algorithm: ensemble,          omnetpp_config: Ensemble}
+  - {scenario: urbangrid,      algorithm: coverage_priority, omnetpp_config: UrbanGrid_CoveragePriority}
+  - {scenario: urbangrid,      algorithm: ensemble,          omnetpp_config: UrbanGrid_Ensemble}
+  - {scenario: urbangrid,      algorithm: ml,                omnetpp_config: UrbanGrid_ML}
+  - {scenario: electroniccity, algorithm: coverage_priority, omnetpp_config: ElectronicCity_CoveragePriority}
+  - {scenario: electroniccity, algorithm: ensemble,          omnetpp_config: ElectronicCity_Ensemble}
+  - {scenario: electroniccity, algorithm: ml,                omnetpp_config: ElectronicCity_ML}
+# not (scenario, algorithm) pairs; need a decision: Dense/Base variants, V2V, CV2X, DsrcLteHandover, EnsembleSweep
+
+# TODO parameters: per-scenario/algorithm tunables (vehicle density, ensemble weights...) passed as OMNeT++ --param=value
