@@ -50,21 +50,21 @@ scenarios:
     description: 2 km straight road, 50 vehicles (DSRC/WiFi/NR/LTE)
     base_config: MultiRatHighway_Base
     default_sim_time: 300s
-    default_values: {num_cars: 50, decision_interval: 0.5s}
+    default_values: {decision_interval: 0.5s}
     metrics_profile: handover
     sumo: simulations/scenarios/highway
   - id: highway_dsrc_lte
     description: Highway V2I heterogeneous handover, DSRC near RSUs and LTE in the gaps (WiFi and NR off)
     base_config: DsrcLteHandover
     default_sim_time: 300s
-    default_values: {num_cars: 50, decision_interval: 0.25s, dsrc_handover_delay: 100ms, lte_handover_delay: 40ms}
+    default_values: {decision_interval: 0.25s, dsrc_handover_delay: 100ms, lte_handover_delay: 40ms}
     metrics_profile: handover
     sumo: simulations/scenarios/highway
   - id: highway_v2v
     description: Highway V2V safety beaconing over ad-hoc DSRC (802.11p/OCB). RAT selection is not the subject.
     base_config: V2V
     default_sim_time: 300s
-    default_values: {num_cars: 50}
+    default_values: {}
     metrics_profile: v2v
     algorithm_relevant: false
     sumo: simulations/scenarios/highway
@@ -72,7 +72,7 @@ scenarios:
     description: Highway C-V2X safety broadcast over 5G-NR PC5 sidelink (D2D multicast). RAT selection is not the subject.
     base_config: CV2X
     default_sim_time: 300s
-    default_values: {num_cars: 50}
+    default_values: {}
     metrics_profile: cv2x
     algorithm_relevant: false
     sumo: simulations/scenarios/highway
@@ -80,14 +80,14 @@ scenarios:
     description: Synthetic 5x5-block urban grid, 40 vehicles, 10 WiFi APs, 10 DSRC RSUs, one gNodeB
     base_config: UrbanGrid_Base
     default_sim_time: 120s
-    default_values: {num_cars: 40, decision_interval: 0.3s}
+    default_values: {decision_interval: 0.3s}
     metrics_profile: handover
     sumo: simulations/scenarios/urbangrid
   - id: electroniccity
     description: Electronic City, Bangalore (real OSM), 50 vehicles, 15 APs/RSUs, 3 gNodeBs
     base_config: ElectronicCity_Base
     default_sim_time: 1000s
-    default_values: {num_cars: 50, decision_interval: 0.5s}
+    default_values: {decision_interval: 0.5s}
     metrics_profile: handover
     sumo: simulations/scenarios/electroniccity
 
@@ -125,16 +125,19 @@ runs:
   - {scenario: electroniccity,   algorithm: ensemble,          omnetpp_config: ElectronicCity_Ensemble}
   - {scenario: electroniccity,   algorithm: ml,                omnetpp_config: ElectronicCity_ML}
 # Not registered as runs, by design:
-#   Dense, UrbanGrid_Dense, ElectronicCity_Dense -> use the num_cars parameter (UrbanGrid_Dense also bumps ensemble_stickiness)
+#   Dense, UrbanGrid_Dense, ElectronicCity_Dense -> their numCars override is a no-op (see the note under parameters); only the
+#                                                   ensemble_stickiness bump in UrbanGrid_Dense has an effect, via that parameter
 #   EnsembleSweep                                -> dashboard sweep over ensemble_weight_sinr x ensemble_weight_latency
 #                                                   with ensemble_stickiness=0 on the ensemble algorithm
 
 # ---------------------------------------------------------------------------------------------
 # Parameters: typed tunables mapped to OMNeT++ ini keys, sent as --<ini_key>=<value> only when set.
+# NOTE: there is deliberately no num_cars. `*.*.numCars` is not declared in any NED file and has no effect: the
+# vehicle count comes from the SUMO route file (highway: 10 eastbound + 7 westbound = 17). Traffic density needs a
+# parameter kind that generates a file (route flow period), which the contract does not have yet.
 # scope: scenario | algorithm.  sweepable: usable as a sweep axis.  applies_to: ids it is valid for.
 # ---------------------------------------------------------------------------------------------
 parameters:
-  - {id: num_cars,             scope: scenario,  type: int,      min: 1,   ini_key: "*.*.numCars",                                      sweepable: true, applies_to: all, description: Number of vehicles}
   - {id: decision_interval,    scope: scenario,  type: duration, ini_key: "*.car[*].multiRatAppManager.decisionInterval",              sweepable: true, applies_to: all, description: RAT re-evaluation interval}
   - {id: dsrc_range,           scope: scenario,  type: distance, ini_key: "*.car[*].ratCoverageMonitor.dsrcRange",                     sweepable: true, applies_to: all}
   - {id: wifi_range,           scope: scenario,  type: distance, ini_key: "*.car[*].ratCoverageMonitor.wifiRange",                     sweepable: true, applies_to: [highway, urbangrid, electroniccity]}
@@ -147,7 +150,7 @@ parameters:
   - {id: ensemble_weight_latency,  scope: algorithm, type: double, min: 0, ini_key: "*.car[*].multiRatAppManager.ensembleWeightLatency",  sweepable: true, applies_to: [ensemble]}
   - {id: ensemble_weight_load,     scope: algorithm, type: double, min: 0, ini_key: "*.car[*].multiRatAppManager.ensembleWeightLoad",     sweepable: true, applies_to: [ensemble]}
   - {id: ensemble_stickiness,      scope: algorithm, type: double, min: 0, ini_key: "*.car[*].multiRatAppManager.ensembleStickiness",     sweepable: true, applies_to: [ensemble]}
-# Verified end to end: --*.*.numCars=7 and --*.car[*].multiRatAppManager.policy="Sinr" override the ini (repo commit 224418d).
+# Verified end to end: --*.car[*].multiRatAppManager.policy="Sinr" overrides the ini (repo commit 224418d); the override mechanism is also confirmed with a (no-op) numCars.
 # Other keys and the seed option are not yet exercised.
 
 # ---------------------------------------------------------------------------------------------
