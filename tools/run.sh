@@ -1,6 +1,6 @@
 #!/bin/bash
 # MultiRATVANET Run Script for Linux/macOS
-# Usage: ./run.sh <CONFIG_NAME> [--sim-time-limit=XXXs] [--analyze]
+# Usage: ./run.sh <CONFIG_NAME> [--sim-time-limit=XXXs] [--analyze] [--<ini-key>=<value> ...]
 
 set -e
 
@@ -8,12 +8,13 @@ CONFIG=$1
 SIM_TIME="100s"
 SUMO_PORT=9998
 DO_ANALYZE=false
+EXTRA_ARGS=()   # any other --option=value is passed straight to the simulation (parameter overrides)
 
 if [[ -z "$CONFIG" ]]; then
-    echo "Usage: ./run.sh <CONFIG_NAME> [--sim-time-limit=XXXs] [--analyze]"
+    echo "Usage: ./run.sh <CONFIG_NAME> [--sim-time-limit=XXXs] [--analyze] [--<ini-key>=<value> ...]"
     echo ""
     echo "Available configs:"
-    echo "  Highway_CoveragePriority, Highway_Ensemble, Highway_ML"
+    echo "  Highway: CoveragePriority, Sinr, LatencyQos, Load, Ml, Ensemble (see simulations/omnetpp.ini)"
     echo "  UrbanGrid_Base, UrbanGrid_Ensemble, UrbanGrid_ML"
     echo "  ElectronicCity_Base, ElectronicCity_Ensemble, ElectronicCity_ML"
     echo ""
@@ -29,6 +30,9 @@ while [[ $# -gt 0 ]]; do
             ;;
         --analyze)
             DO_ANALYZE=true
+            ;;
+        *)
+            EXTRA_ARGS+=("$1")
             ;;
     esac
     shift
@@ -57,6 +61,7 @@ cd "$ROOT_DIR"
     -n "simulations/networks:framework/src/multirat/_ned:${INET_DIR:-/home/vnet/vehicular-sim/inet-4.6.0}/src:${VEINS_DIR:-/home/vnet/vehicular-sim/veins-5.3.1}/src/veins:${VEINS_DIR:-/home/vnet/vehicular-sim/veins-5.3.1}/subprojects/veins_inet/src/veins_inet:${SIMU5G_DIR:-/home/vnet/vehicular-sim/simu5g-1.7.0}/src:${SIMU5G_DIR:-/home/vnet/vehicular-sim/simu5g-1.7.0}/simulations" \
     --sim-time-limit="$SIM_TIME" \
     ${RESULTS_ROOT:+--result-dir="$RESULTS_DIR"} \
+    "${EXTRA_ARGS[@]}" \
     -r 0
 
 echo ""
