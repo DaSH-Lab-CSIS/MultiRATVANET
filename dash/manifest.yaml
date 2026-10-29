@@ -38,7 +38,7 @@ outputs:
   - {kind: omnetpp-vector, glob: "**/*.vec"}
   - {kind: omnetpp-index,  glob: "**/*.vci"}
   - {kind: ini-snapshot,   glob: "**/run-settings.ini"}
-# TODO metrics_adapter — maps .sca/.vec into the standard metrics schema; each scenario names a metrics_profile.
+# Standard metrics are defined in the `metrics` section below; each scenario names a metrics_profile.
 
 # ---------------------------------------------------------------------------------------------
 # Scenarios (data, not code). base_config is the omnetpp.ini config that defines the scenario with no
@@ -149,3 +149,42 @@ parameters:
   - {id: ensemble_stickiness,      scope: algorithm, type: double, min: 0, ini_key: "*.car[*].multiRatAppManager.ensembleStickiness",     sweepable: true, applies_to: [ensemble]}
 # Verified end to end: --*.*.numCars=7 and --*.car[*].multiRatAppManager.policy="Sinr" override the ini (repo commit 224418d).
 # Other keys and the seed option are not yet exercised.
+
+# ---------------------------------------------------------------------------------------------
+# Metrics: how this tool's raw results map to the dashboard's standard metrics (dash-metrics/0).
+# Aggregation is across entities (here: vehicles); NaN values are skipped and counted (n_missing).
+# `headline` is the aggregate shown by default in compare views; `better` says which direction is good.
+# Mapping from scalars written by multiRatAppManager and ratCoverageMonitor (verified on a real result file).
+# NOT YET MAPPED (not in these modules' scalars): end-to-end latency, packet loss, throughput (need app-level
+# statistics), and the v2v / cv2x profiles.
+# ---------------------------------------------------------------------------------------------
+metrics:
+  schema: dash-metrics/0
+  profiles:
+    handover:
+      reader: omnetpp-scalar
+      entity: {name: vehicle, module: '(.*\.car\[\d+\])\.'}
+      modules:
+        manager:  '\.car\[\d+\]\.multiRatAppManager$'
+        coverage: '\.car\[\d+\]\.ratCoverageMonitor$'
+      metrics:
+        - {id: handover_count,         label: Handovers,                     unit: count, module: manager,  scalar: handoversTotal,       aggregate: [mean, sum, max], headline: mean, better: lower}
+        - {id: ping_pong_count,        label: Ping-pong handovers,           unit: count, module: manager,  scalar: pingPongTotal,        aggregate: [mean, sum],      headline: mean, better: lower}
+        - {id: ping_pong_ratio,        label: Ping-pong ratio,               unit: ratio, module: manager,  scalar: pingPongRatio,        aggregate: [mean, max],      headline: mean, better: lower}
+        - {id: handover_failed_count,  label: Failed handovers,              unit: count, module: manager,  scalar: "handoverFailed:count", aggregate: [mean, sum],    headline: mean, better: lower}
+        - {id: decision_count,         label: Policy decisions,              unit: count, module: manager,  scalar: "decisionCount:count",  aggregate: [mean, sum],    headline: mean, better: none}
+        - {id: handover_delay_total_s, label: Total handover delay,          unit: s,     module: manager,  scalar: handoverDelayTotal,    aggregate: [sum, mean],      headline: sum,  better: lower}
+        - {id: handover_delay_max_s,   label: Worst handover delay,          unit: s,     module: manager,  scalar: handoverDelayMax,      aggregate: [max],            headline: max,  better: lower}
+        - {id: handover_delay_mean_s,  label: Mean handover delay (fleet),   unit: s,     ratio: {num: handover_delay_total_s, den: handover_count, using: sum}, better: lower}
+        - {id: selection_share_dsrc,   label: Time on DSRC,                  unit: ratio, module: manager,  scalar: DSRC.selectionShare,   aggregate: [mean], headline: mean, better: none}
+        - {id: selection_share_wifi,   label: Time on WiFi,                  unit: ratio, module: manager,  scalar: WIFI.selectionShare,   aggregate: [mean], headline: mean, better: none}
+        - {id: selection_share_lte,    label: Time on LTE,                   unit: ratio, module: manager,  scalar: LTE.selectionShare,    aggregate: [mean], headline: mean, better: none}
+        - {id: selection_share_nr,     label: Time on NR,                    unit: ratio, module: manager,  scalar: NR.selectionShare,     aggregate: [mean], headline: mean, better: none}
+        - {id: selection_share_6g,     label: Time on 6G,                    unit: ratio, module: manager,  scalar: 6G.selectionShare,     aggregate: [mean], headline: mean, better: none}
+        - {id: outage_ratio,           label: Outage ratio,                  unit: ratio, module: coverage, scalar: outageRatio,           aggregate: [mean, max],      headline: mean, better: lower}
+        - {id: outage_time_total_s,    label: Outage time,                   unit: s,     module: coverage, scalar: outageTimeTotal,       aggregate: [mean, sum],      headline: mean, better: lower}
+        - {id: outage_count,           label: Outages,                       unit: count, module: coverage, scalar: outageCount,           aggregate: [mean, sum],      headline: mean, better: lower}
+        - {id: max_outage_duration_s,  label: Longest outage,                unit: s,     module: coverage, scalar: maxOutageDuration,     aggregate: [max],            headline: max,  better: lower}
+        - {id: connectivity_ratio,     label: Connectivity ratio,            unit: ratio, module: coverage, scalar: connectivityRatio,     aggregate: [mean, min],      headline: mean, better: higher}
+        - {id: multi_connectivity_ratio, label: Multi-RAT connectivity,      unit: ratio, module: coverage, scalar: multiConnectivityRatio, aggregate: [mean],         headline: mean, better: higher}
+        - {id: avg_available_rats,     label: Available RATs (avg),         unit: count, module: coverage, scalar: avgAvailableRats,      aggregate: [mean], headline: mean, better: higher}
