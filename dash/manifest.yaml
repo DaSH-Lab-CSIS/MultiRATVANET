@@ -143,6 +143,8 @@ parameters:
   - {id: wifi_range,           scope: scenario,  type: distance, ini_key: "*.car[*].ratCoverageMonitor.wifiRange",                     sweepable: true, applies_to: [highway, urbangrid, electroniccity]}
   - {id: nr_range,             scope: scenario,  type: distance, ini_key: "*.car[*].ratCoverageMonitor.nrRange",                       sweepable: true, applies_to: [highway, electroniccity]}
   - {id: lte_range,            scope: scenario,  type: distance, ini_key: "*.car[*].ratCoverageMonitor.lteRange",                      sweepable: true, applies_to: [urbangrid, electroniccity]}
+  - {id: lte_interface,        scope: scenario,  type: string,   ini_key: "*.car[*].multiRatAppManager.lteInterface",             applies_to: all, description: "Name of the LTE network interface the manager routes through. omnetpp.ini sets \"wlan\" but Simu5G 1.7 names it \"cellular\", so LTE handovers fail unless this is \"cellular\""}
+  - {id: nr_interface,         scope: scenario,  type: string,   ini_key: "*.car[*].multiRatAppManager.nrInterface",              applies_to: all, description: "Name of the NR network interface (same issue as lte_interface)"}
   - {id: dsrc_handover_delay,  scope: scenario,  type: duration, ini_key: "*.car[*].multiRatAppManager.dsrcHandoverDelay",             sweepable: true, applies_to: [highway_dsrc_lte]}
   - {id: lte_handover_delay,   scope: scenario,  type: duration, ini_key: "*.car[*].multiRatAppManager.lteHandoverDelay",              sweepable: true, applies_to: [highway_dsrc_lte]}
   - {id: ensemble_weight_coverage, scope: algorithm, type: double, min: 0, ini_key: "*.car[*].multiRatAppManager.ensembleWeightCoverage", sweepable: true, applies_to: [ensemble], description: Voter weight, 0 disables}
