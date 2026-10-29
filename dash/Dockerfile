@@ -39,5 +39,8 @@ LABEL dash.adapter.contract="0-draft" \
       dash.repo.name="MultiRATVANET" \
       dash.repo.commit="${REPO_COMMIT}" \
       dash.repo.dirty="${REPO_DIRTY}" \
-      dash.manifest="/opt/dash/manifest.yaml"
+      dash.manifest="/opt/dash/manifest.yaml" \
+      org.opencontainers.image.title="MultiRATVANET" \
+      org.opencontainers.image.description="MultiRATVANET multi-RAT VANET framework on the pinned vsim-base toolchain" \
+      org.opencontainers.image.version="${REPO_COMMIT}"
 # Entrypoint (tini -> vsim-entrypoint -> launchd on :9999) and CMD are inherited from vsim-base.

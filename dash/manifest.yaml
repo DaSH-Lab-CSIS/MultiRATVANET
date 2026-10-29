@@ -1,19 +1,36 @@
 # DRAFT adapter manifest — schema "dash-adapter/0". Provisional until a second, different tool is onboarded.
 # The dashboard reads this file; it must not contain MultiRATVANET-specific code.
+# Image tag + exact repo commit come from the image labels (dash.repo.commit / dash.repo.dirty), not from here.
 schema: dash-adapter/0
 tool:
   name: MultiRATVANET
   description: Multi-RAT VANET handover framework (OMNeT++/Veins/INET/Simu5G/SUMO)
-# image tag + exact repo commit come from the image labels (dash.repo.commit / dash.repo.dirty), not from here
 
+# ---------------------------------------------------------------------------------------------
+# How to run ONE job. Placeholders are filled by the runner from the job request.
+#   {omnetpp_config}  config name from the selected run (or the scenario base_config when composed)
+#   {sim_time}        duration; defaults to the scenario's default_sim_time (tools/run.sh itself defaults to
+#                     100s and would override every config's own limit, so it is ALWAYS passed)
+#   {param_args}      expands to zero or more argv entries, one "--<ini_key>=<value>" per parameter that
+#                     the job sets (parameters not set are omitted, so the config's own value applies)
+# argv is passed without a shell. tools/run.sh forwards unknown --key=value args to the simulation.
+# ---------------------------------------------------------------------------------------------
 run:
-  # one job = one command inside the container; {placeholders} are filled from the job request
-  command: ["./tools/run.sh", "{omnetpp_config}", "--sim-time-limit={sim_time}"]
+  command: ["./tools/run.sh", "{omnetpp_config}", "--sim-time-limit={sim_time}", "{param_args}"]
   working_dir: /workspace
   env:
     RESULTS_ROOT: /results/{job_id}      # runner sets this per job
-  params:
-    sim_time: {type: duration, default: 70s, description: Simulation time limit}
+  value_format:                          # how a typed value is rendered after "--<ini_key>="
+    int: "{v}"
+    double: "{v}"
+    bool: "{v}"                          # true | false
+    duration: "{v}"                      # number + unit, e.g. 0.3s
+    distance: "{v}"                      # number + unit, e.g. 300m
+    string: "\"{v}\""                    # NED string literal: the quotes are part of the argv entry
+  seed:
+    # OMNeT++ seed set; tools/run.sh passes -r 0 so repetitions are selected with --seed-set. UNTESTED.
+    ini_key: seed-set
+    status: untested
 
 outputs:
   # raw files are always kept and downloadable
@@ -21,35 +38,114 @@ outputs:
   - {kind: omnetpp-vector, glob: "**/*.vec"}
   - {kind: omnetpp-index,  glob: "**/*.vci"}
   - {kind: ini-snapshot,   glob: "**/run-settings.ini"}
-# TODO: metrics_adapter — maps .sca/.vec into the standard metrics schema (handover count, latency, outage, loss, throughput)
+# TODO metrics_adapter — maps .sca/.vec into the standard metrics schema; each scenario names a metrics_profile.
 
-scenarios:            # data, not code
-  - {id: highway,         description: Highway baseline,  sumo: simulations/scenarios/highway}
-  - {id: urbangrid,       description: Synthetic urban grid, sumo: simulations/scenarios/urbangrid}
-  - {id: electroniccity,  description: Electronic City (real OSM), sumo: simulations/scenarios/electroniccity}
+# ---------------------------------------------------------------------------------------------
+# Scenarios (data, not code). base_config is the omnetpp.ini config that defines the scenario with no
+# algorithm chosen (its policy is the NED default, CoveragePriority). default_* values are the
+# ini values, shown to the user; they are NOT sent unless the user changes them.
+# ---------------------------------------------------------------------------------------------
+scenarios:
+  - id: highway
+    description: 2 km straight road, 50 vehicles (DSRC/WiFi/NR/LTE)
+    base_config: MultiRatHighway_Base
+    default_sim_time: 300s
+    default_values: {num_cars: 50, decision_interval: 0.5s}
+    metrics_profile: handover
+    sumo: simulations/scenarios/highway
+  - id: highway_dsrc_lte
+    description: Highway V2I heterogeneous handover, DSRC near RSUs and LTE in the gaps (WiFi and NR off)
+    base_config: DsrcLteHandover
+    default_sim_time: 300s
+    default_values: {num_cars: 50, decision_interval: 0.25s, dsrc_handover_delay: 100ms, lte_handover_delay: 40ms}
+    metrics_profile: handover
+    sumo: simulations/scenarios/highway
+  - id: highway_v2v
+    description: Highway V2V safety beaconing over ad-hoc DSRC (802.11p/OCB). RAT selection is not the subject.
+    base_config: V2V
+    default_sim_time: 300s
+    default_values: {num_cars: 50}
+    metrics_profile: v2v
+    algorithm_relevant: false
+    sumo: simulations/scenarios/highway
+  - id: highway_cv2x
+    description: Highway C-V2X safety broadcast over 5G-NR PC5 sidelink (D2D multicast). RAT selection is not the subject.
+    base_config: CV2X
+    default_sim_time: 300s
+    default_values: {num_cars: 50}
+    metrics_profile: cv2x
+    algorithm_relevant: false
+    sumo: simulations/scenarios/highway
+  - id: urbangrid
+    description: Synthetic 5x5-block urban grid, 40 vehicles, 10 WiFi APs, 10 DSRC RSUs, one gNodeB
+    base_config: UrbanGrid_Base
+    default_sim_time: 120s
+    default_values: {num_cars: 40, decision_interval: 0.3s}
+    metrics_profile: handover
+    sumo: simulations/scenarios/urbangrid
+  - id: electroniccity
+    description: Electronic City, Bangalore (real OSM), 50 vehicles, 15 APs/RSUs, 3 gNodeBs
+    base_config: ElectronicCity_Base
+    default_sim_time: 1000s
+    default_values: {num_cars: 50, decision_interval: 0.5s}
+    metrics_profile: handover
+    sumo: simulations/scenarios/electroniccity
 
+# ---------------------------------------------------------------------------------------------
+# Algorithms. overrides are applied on top of a scenario's base_config when a (scenario, algorithm)
+# pair has no explicit entry in `runs` (composition; EXPERIMENTAL, validated for one pair first).
+# ---------------------------------------------------------------------------------------------
 algorithms:
-  - {id: coverage_priority, description: Coverage priority}
-  - {id: sinr,              description: SINR-based}
-  - {id: latency_qos,       description: Latency/QoS-based}
-  - {id: load,              description: Load-balanced}
-  - {id: ensemble,          description: Ensemble voting}
-  - {id: ml,                description: ML-driven policy}
+  - {id: coverage_priority, description: "Coverage priority (DSRC>WiFi>NR>LTE)", overrides: {"*.car[*].multiRatAppManager.policy": {type: string, value: CoveragePriority}}}
+  - {id: sinr,              description: "Pick the in-range RAT with the best signal quality", overrides: {"*.car[*].multiRatAppManager.policy": {type: string, value: Sinr}}}
+  - {id: latency_qos,       description: "Meet the latency budget with the most capacity",      overrides: {"*.car[*].multiRatAppManager.policy": {type: string, value: LatencyQos}}}
+  - {id: load,              description: "Balance load across in-range RATs",                    overrides: {"*.car[*].multiRatAppManager.policy": {type: string, value: Load}}}
+  - {id: ensemble,          description: "Weighted vote of all base policies",                   overrides: {"*.car[*].multiRatAppManager.policy": {type: string, value: Ensemble}}}
+  - {id: ml,                description: "Learned / federated controller hook",                 overrides: {"*.car[*].multiRatAppManager.policy": {type: string, value: Ml}}}
 
-# (scenario, algorithm) -> omnetpp config. Config names are inconsistent in omnetpp.ini, so this is an explicit map.
+# ---------------------------------------------------------------------------------------------
+# Explicit runs: (scenario, algorithm) -> omnetpp config. These are presets: they carry scenario-specific
+# algorithm tuning that lives in omnetpp.ini (e.g. Ml decisionInterval 0.3s highway / 0.2s urban;
+# Ensemble weights differ per scenario). Config names in omnetpp.ini are inconsistent, hence explicit.
+# ---------------------------------------------------------------------------------------------
 runs:
-  - {scenario: highway,        algorithm: coverage_priority, omnetpp_config: CoveragePriority}
-  - {scenario: highway,        algorithm: sinr,              omnetpp_config: Sinr}
-  - {scenario: highway,        algorithm: latency_qos,       omnetpp_config: LatencyQos}
-  - {scenario: highway,        algorithm: load,              omnetpp_config: Load}
-  - {scenario: highway,        algorithm: ml,                omnetpp_config: Ml}
-  - {scenario: highway,        algorithm: ensemble,          omnetpp_config: Ensemble}
-  - {scenario: urbangrid,      algorithm: coverage_priority, omnetpp_config: UrbanGrid_CoveragePriority}
-  - {scenario: urbangrid,      algorithm: ensemble,          omnetpp_config: UrbanGrid_Ensemble}
-  - {scenario: urbangrid,      algorithm: ml,                omnetpp_config: UrbanGrid_ML}
-  - {scenario: electroniccity, algorithm: coverage_priority, omnetpp_config: ElectronicCity_CoveragePriority}
-  - {scenario: electroniccity, algorithm: ensemble,          omnetpp_config: ElectronicCity_Ensemble}
-  - {scenario: electroniccity, algorithm: ml,                omnetpp_config: ElectronicCity_ML}
-# not (scenario, algorithm) pairs; need a decision: Dense/Base variants, V2V, CV2X, DsrcLteHandover, EnsembleSweep
+  - {scenario: highway,          algorithm: coverage_priority, omnetpp_config: CoveragePriority}
+  - {scenario: highway,          algorithm: sinr,              omnetpp_config: Sinr}
+  - {scenario: highway,          algorithm: latency_qos,       omnetpp_config: LatencyQos}
+  - {scenario: highway,          algorithm: load,              omnetpp_config: Load}
+  - {scenario: highway,          algorithm: ml,                omnetpp_config: Ml}
+  - {scenario: highway,          algorithm: ensemble,          omnetpp_config: Ensemble}
+  - {scenario: highway_dsrc_lte, algorithm: coverage_priority, omnetpp_config: DsrcLteHandover}
+  - {scenario: highway_v2v,      algorithm: coverage_priority, omnetpp_config: V2V}
+  - {scenario: highway_cv2x,     algorithm: coverage_priority, omnetpp_config: CV2X}
+  - {scenario: urbangrid,        algorithm: coverage_priority, omnetpp_config: UrbanGrid_CoveragePriority}
+  - {scenario: urbangrid,        algorithm: ensemble,          omnetpp_config: UrbanGrid_Ensemble}
+  - {scenario: urbangrid,        algorithm: ml,                omnetpp_config: UrbanGrid_ML}
+  - {scenario: electroniccity,   algorithm: coverage_priority, omnetpp_config: ElectronicCity_CoveragePriority}
+  - {scenario: electroniccity,   algorithm: ensemble,          omnetpp_config: ElectronicCity_Ensemble}
+  - {scenario: electroniccity,   algorithm: ml,                omnetpp_config: ElectronicCity_ML}
+# Not registered as runs, by design:
+#   Dense, UrbanGrid_Dense, ElectronicCity_Dense -> use the num_cars parameter (UrbanGrid_Dense also bumps ensemble_stickiness)
+#   EnsembleSweep                                -> dashboard sweep over ensemble_weight_sinr x ensemble_weight_latency
+#                                                   with ensemble_stickiness=0 on the ensemble algorithm
 
-# TODO parameters: per-scenario/algorithm tunables (vehicle density, ensemble weights...) passed as OMNeT++ --param=value
+# ---------------------------------------------------------------------------------------------
+# Parameters: typed tunables mapped to OMNeT++ ini keys, sent as --<ini_key>=<value> only when set.
+# scope: scenario | algorithm.  sweepable: usable as a sweep axis.  applies_to: ids it is valid for.
+# ---------------------------------------------------------------------------------------------
+parameters:
+  - {id: num_cars,             scope: scenario,  type: int,      min: 1,   ini_key: "*.*.numCars",                                      sweepable: true, applies_to: all, description: Number of vehicles}
+  - {id: decision_interval,    scope: scenario,  type: duration, ini_key: "*.car[*].multiRatAppManager.decisionInterval",              sweepable: true, applies_to: all, description: RAT re-evaluation interval}
+  - {id: dsrc_range,           scope: scenario,  type: distance, ini_key: "*.car[*].ratCoverageMonitor.dsrcRange",                     sweepable: true, applies_to: all}
+  - {id: wifi_range,           scope: scenario,  type: distance, ini_key: "*.car[*].ratCoverageMonitor.wifiRange",                     sweepable: true, applies_to: [highway, urbangrid, electroniccity]}
+  - {id: nr_range,             scope: scenario,  type: distance, ini_key: "*.car[*].ratCoverageMonitor.nrRange",                       sweepable: true, applies_to: [highway, electroniccity]}
+  - {id: lte_range,            scope: scenario,  type: distance, ini_key: "*.car[*].ratCoverageMonitor.lteRange",                      sweepable: true, applies_to: [urbangrid, electroniccity]}
+  - {id: dsrc_handover_delay,  scope: scenario,  type: duration, ini_key: "*.car[*].multiRatAppManager.dsrcHandoverDelay",             sweepable: true, applies_to: [highway_dsrc_lte]}
+  - {id: lte_handover_delay,   scope: scenario,  type: duration, ini_key: "*.car[*].multiRatAppManager.lteHandoverDelay",              sweepable: true, applies_to: [highway_dsrc_lte]}
+  - {id: ensemble_weight_coverage, scope: algorithm, type: double, min: 0, ini_key: "*.car[*].multiRatAppManager.ensembleWeightCoverage", sweepable: true, applies_to: [ensemble], description: Voter weight, 0 disables}
+  - {id: ensemble_weight_sinr,     scope: algorithm, type: double, min: 0, ini_key: "*.car[*].multiRatAppManager.ensembleWeightSinr",     sweepable: true, applies_to: [ensemble]}
+  - {id: ensemble_weight_latency,  scope: algorithm, type: double, min: 0, ini_key: "*.car[*].multiRatAppManager.ensembleWeightLatency",  sweepable: true, applies_to: [ensemble]}
+  - {id: ensemble_weight_load,     scope: algorithm, type: double, min: 0, ini_key: "*.car[*].multiRatAppManager.ensembleWeightLoad",     sweepable: true, applies_to: [ensemble]}
+  - {id: ensemble_stickiness,      scope: algorithm, type: double, min: 0, ini_key: "*.car[*].multiRatAppManager.ensembleStickiness",     sweepable: true, applies_to: [ensemble]}
+# Verified end to end: --*.*.numCars=7 and --*.car[*].multiRatAppManager.policy="Sinr" override the ini (repo commit 224418d).
+# Other keys and the seed option are not yet exercised.
