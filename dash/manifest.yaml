@@ -181,11 +181,15 @@ metrics:
         - {id: handover_delay_total_s, label: Total handover delay,          unit: s,     module: manager,  scalar: handoverDelayTotal,    aggregate: [sum, mean],      headline: sum,  better: lower}
         - {id: handover_delay_max_s,   label: Worst handover delay,          unit: s,     module: manager,  scalar: handoverDelayMax,      aggregate: [max],            headline: max,  better: lower}
         - {id: handover_delay_mean_s,  label: Mean handover delay (fleet),   unit: s,     ratio: {num: handover_delay_total_s, den: handover_count, using: sum}, better: lower}
-        - {id: selection_share_dsrc,   label: Time on DSRC,                  unit: ratio, module: manager,  scalar: DSRC.selectionShare,   aggregate: [mean], headline: mean, better: none}
-        - {id: selection_share_wifi,   label: Time on WiFi,                  unit: ratio, module: manager,  scalar: WIFI.selectionShare,   aggregate: [mean], headline: mean, better: none}
-        - {id: selection_share_lte,    label: Time on LTE,                   unit: ratio, module: manager,  scalar: LTE.selectionShare,    aggregate: [mean], headline: mean, better: none}
-        - {id: selection_share_nr,     label: Time on NR,                    unit: ratio, module: manager,  scalar: NR.selectionShare,     aggregate: [mean], headline: mean, better: none}
+        - {id: selection_share_dsrc,   label: Time on DSRC,                  unit: ratio, module: manager,  scalar: DSRC.selectionShare,   aggregate: [mean], headline: mean, better: none, availability: in_range_dsrc}
+        - {id: selection_share_wifi,   label: Time on WiFi,                  unit: ratio, module: manager,  scalar: WIFI.selectionShare,   aggregate: [mean], headline: mean, better: none, availability: in_range_wifi}
+        - {id: selection_share_lte,    label: Time on LTE,                   unit: ratio, module: manager,  scalar: LTE.selectionShare,    aggregate: [mean], headline: mean, better: none, availability: in_range_lte}
+        - {id: selection_share_nr,     label: Time on NR,                    unit: ratio, module: manager,  scalar: NR.selectionShare,     aggregate: [mean], headline: mean, better: none, availability: in_range_nr}
         - {id: selection_share_6g,     label: Time on 6G,                    unit: ratio, module: manager,  scalar: 6G.selectionShare,     aggregate: [mean], headline: mean, better: none}
+        - {id: in_range_dsrc,          label: DSRC in range (time share),    unit: ratio, module: coverage, scalar: "dsrcInRange:timeavg", aggregate: [mean], headline: mean, better: none}
+        - {id: in_range_wifi,          label: WiFi in range (time share),    unit: ratio, module: coverage, scalar: "wifiInRange:timeavg", aggregate: [mean], headline: mean, better: none}
+        - {id: in_range_lte,           label: LTE in range (time share),     unit: ratio, module: coverage, scalar: "lteInRange:timeavg",  aggregate: [mean], headline: mean, better: none}
+        - {id: in_range_nr,            label: NR in range (time share),      unit: ratio, module: coverage, scalar: "nrInRange:timeavg",   aggregate: [mean], headline: mean, better: none}
         - {id: outage_ratio,           label: Outage ratio,                  unit: ratio, module: coverage, scalar: outageRatio,           aggregate: [mean, max],      headline: mean, better: lower}
         - {id: outage_time_total_s,    label: Outage time,                   unit: s,     module: coverage, scalar: outageTimeTotal,       aggregate: [mean, sum],      headline: mean, better: lower}
         - {id: outage_count,           label: Outages,                       unit: count, module: coverage, scalar: outageCount,           aggregate: [mean, sum],      headline: mean, better: lower}
