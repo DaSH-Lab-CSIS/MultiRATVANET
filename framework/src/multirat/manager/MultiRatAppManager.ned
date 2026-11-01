@@ -5,9 +5,12 @@
 // RatCoverageMonitor, asks the configured IRatSelectionPolicy which RAT should
 // be active, and - if that differs from the current RAT and is in range -
 // executes a handover by swapping the IPv4 default route onto the selected
-// RAT's interface. The switch is modelled with a configurable execution delay
-// to represent the make-before-break interruption. A full set of handover
-// performance metrics is emitted as signals for post-processing.
+// RAT's interface. A RAT is only offered to the policy while it is usable
+// (RatCoverageMonitor: measured, above threshold, 802.11 associated), so the
+// route moves immediately; what the switch really costs (queued packets on the
+// old link, the new link's first-packet delay) comes out of the simulated
+// stacks and is measured at the receiver by MultiRatSink. Handover counts and
+// ping-pong are emitted as signals.
 //
 package multiratvanet;
 
@@ -24,14 +27,13 @@ simple MultiRatAppManager
         string policy = default("CoveragePriority"); // CoveragePriority|Sinr|LatencyQos|Load|Ml|Ensemble
         double decisionInterval @unit(s) = default(0.5s);
         bool decideOnlyOnCoverageChange = default(false);
-        double handoverExecDelay @unit(s) = default(50ms); // default modelled switch interruption
+        // Extra delay before the route moves, for signalling the stacks do not simulate
+        // (e.g. IP mobility). 0 = the switch costs only what the simulated stacks cost.
+        double handoverExecDelay @unit(s) = default(0s);
         double pingPongWindow @unit(s) = default(2s);
-        double startTime @unit(s) = default(1s);
+        double startTime @unit(s) = default(1s);   // after the car appears; plus a random phase within decisionInterval
 
-        // Per-target-RAT handover interruption time (make-before-break). Each
-        // defaults to handoverExecDelay; override to model that e.g. associating
-        // to an 802.11p DSRC RSU costs more than swapping onto an attached LTE
-        // bearer. The measured handoverLatency reflects whichever applies.
+        // Per-target-RAT version of handoverExecDelay (each defaults to it).
         double dsrcHandoverDelay @unit(s) = default(handoverExecDelay);
         double wifiHandoverDelay @unit(s) = default(handoverExecDelay);
         double lteHandoverDelay  @unit(s) = default(handoverExecDelay);
@@ -61,11 +63,11 @@ simple MultiRatAppManager
 
         // ---- Handover performance metrics ----
         @signal[handoverCount](type=long);   // 1 per completed handover
-        @signal[handoverLatency](type=double); // s, execution/interruption time
+        @signal[handoverLatency](type=double); // s, decision to route change (= the extra delay above)
         @signal[handoverPair](type=long);     // fromRat*10 + toRat
         @signal[pingPong](type=long);         // 1 per detected ping-pong
         @signal[activeRat](type=long);        // current RAT index over time
-        @signal[outageTime](type=double);     // s of interruption per handover
+        @signal[outageTime](type=double);     // s, same as handoverLatency; real interruption: MultiRatSink
         @signal[decisionCount](type=long);    // 1 per policy evaluation
         @signal[handoverFailed](type=long);   // 1 per aborted handover (target lost)
 
