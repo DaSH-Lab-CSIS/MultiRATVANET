@@ -24,6 +24,7 @@ class MultiRatAppManager : public omnetpp::cSimpleModule
 {
   public:
     RatId getActiveRat() const { return current_; }
+    long getSwitchCount() const { return handoverTotal_; }  // completed switches so far
 
   protected:
     virtual int numInitStages() const override;
