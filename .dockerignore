@@ -11,3 +11,5 @@ all_metrics_summary.csv
 **/*.sca
 **/*.vec
 **/*.vci
+# toolchain tarball cache (the base image build mounts it from docker/base)
+docker/base/dl
