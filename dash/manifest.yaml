@@ -172,6 +172,8 @@ metrics:
       modules:
         manager:  '\.car\[\d+\]\.multiRatAppManager$'
         coverage: '\.car\[\d+\]\.ratCoverageMonitor$'
+        car_app:    '\.car\[\d+\]\.app\[0\]$'
+        server_app: '\.server\.app\[0\]$'
       metrics:
         - {id: handover_count,         label: Handovers,                     unit: count, module: manager,  scalar: handoversTotal,       aggregate: [mean, sum, max], headline: mean, better: lower}
         - {id: ping_pong_count,        label: Ping-pong handovers,           unit: count, module: manager,  scalar: pingPongTotal,        aggregate: [mean, sum],      headline: mean, better: lower}
@@ -197,3 +199,13 @@ metrics:
         - {id: connectivity_ratio,     label: Connectivity ratio,            unit: ratio, module: coverage, scalar: connectivityRatio,     aggregate: [mean, min],      headline: mean, better: higher}
         - {id: multi_connectivity_ratio, label: Multi-RAT connectivity,      unit: ratio, module: coverage, scalar: multiConnectivityRatio, aggregate: [mean],         headline: mean, better: higher}
         - {id: avg_available_rats,     label: Available RATs (avg),         unit: count, module: coverage, scalar: avgAvailableRats,      aggregate: [mean], headline: mean, better: higher}
+        # ---- service quality, from the apps' own statistics (vehicle app[0] sends to server app[0])
+        - {id: packets_sent,           label: Packets sent (vehicles),       unit: count, module: car_app,    scalar: "packetSent:count",     aggregate: [sum, mean], headline: sum, better: none}
+        - {id: packets_received,       label: Packets received (server),     unit: count, module: server_app, scalar: "packetReceived:count", aggregate: [sum], headline: sum, better: none}
+        - {id: packet_delivery_ratio,  label: Delivery ratio,                unit: ratio, ratio: {num: packets_received, den: packets_sent, using: sum}, better: higher}
+        - {id: packet_loss_ratio,      label: Packet loss,                   unit: ratio, ratio: {num: packets_received, den: packets_sent, using: sum, complement: true}, better: lower}
+        - {id: throughput_mbps,        label: Throughput at server,          unit: Mbit/s, module: server_app, scalar: "packetReceived:sum(packetBytes)", scale: 8.0e-6, per_sim_second: true, aggregate: [sum], headline: sum, better: higher}
+        - {id: delay_sum_s,            label: End-to-end delay (total),      unit: s,     module: server_app, statistic: "endToEndDelay:histogram", field: sum,   aggregate: [sum], headline: sum, better: none, hidden: true}
+        - {id: delay_count,            label: End-to-end delay (samples),    unit: count, module: server_app, statistic: "endToEndDelay:histogram", field: count, aggregate: [sum], headline: sum, better: none, hidden: true}
+        - {id: delay_mean_s,           label: Mean end-to-end delay,         unit: s,     ratio: {num: delay_sum_s, den: delay_count, using: sum}, better: lower}
+        - {id: delay_max_s,            label: Worst end-to-end delay,        unit: s,     module: server_app, statistic: "endToEndDelay:histogram", field: max, aggregate: [max], headline: max, better: lower}
