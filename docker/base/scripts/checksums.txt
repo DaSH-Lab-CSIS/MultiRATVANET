@@ -1,0 +1,6 @@
+# sha256 of upstream release tarballs, keyed by file name (verified by vsim-fetch)
+86137d49f8fc2be2b14c451c7a7bdd9a727b5f233333b8013084e31ea0e62d88  omnetpp-6.3.0-linux-x86_64.tgz
+19657ceb16646e3c2e0938981f9ad55fb75a8f1737b00dbc0bf50b710750357a  omnetpp-6.3.0-linux-aarch64.tgz
+a990b2285bcd103edfe55f17706b2d0f2dbdbf8ac3e29826ff83efc7ab21b5ad  inet-4.6.0-src.tgz
+af0cd0c325d91d0dac7282425f850e9ba76956d1a2e78bdb860cc21edd5e7b83  simu5g-1.7.0-src.tgz
+# GitHub /archive/ tarballs (veins, sumo, simu5g fallback) are generated on the fly and not byte-stable; pinned by git tag instead.

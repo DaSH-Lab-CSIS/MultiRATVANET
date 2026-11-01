@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# mrv: run MultiRATVANET from its container image. Nothing but Docker is needed on the host.
+#
+#   mrv run <CONFIG> [--sim-time-limit=120s] ['--<ini-key>=<value>' ...]   one simulation, results in ./results
+#   mrv shell                                                              bash inside the image (toolchain on PATH)
+#   mrv versions                                                           toolchain and repo provenance of the image
+#
+# Environment: MRV_IMAGE (default multiratvanet:latest), MRV_RESULTS (default ./results),
+#              DOCKER (default "docker"; e.g. "sudo docker").
+# Configs: CoveragePriority Sinr LatencyQos Load Ml Ensemble (highway), UrbanGrid_*, ElectronicCity_*;
+#          see simulations/omnetpp.ini.
+set -euo pipefail
+
+IMAGE=${MRV_IMAGE:-multiratvanet:latest}
+DOCKER=${DOCKER:-docker}
+RESULTS=${MRV_RESULTS:-$PWD/results}
+
+tty=()
+[ -t 0 ] && [ -t 1 ] && tty=(-it)
+
+in_image() {
+    mkdir -p "$RESULTS"
+    # run as the calling user so result files are owned by them, not by the image's uid 1000
+    $DOCKER run --rm "${tty[@]}" --user "$(id -u):$(id -g)" -v "$RESULTS":/results "$IMAGE" "$@"
+}
+
+case "${1:-}" in
+    run)
+        shift
+        [ $# -ge 1 ] || { echo "usage: mrv run <CONFIG> [options]" >&2; exit 2; }
+        in_image ./tools/run.sh "$@"
+        ;;
+    shell)
+        in_image bash
+        ;;
+    versions)
+        $DOCKER run --rm -e VSIM_LAUNCHD=0 "$IMAGE" vsim-versions
+        $DOCKER image inspect "$IMAGE" --format '{{range $k, $v := .Config.Labels}}{{$k}}={{$v}}{{"\n"}}{{end}}' | grep -E '^dash\.'
+        ;;
+    *)
+        sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
+        exit 2
+        ;;
+esac

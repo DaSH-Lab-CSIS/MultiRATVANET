@@ -10,7 +10,7 @@
 #include "inet/common/InitStages.h"
 #include "inet/common/ModuleAccess.h"
 #include "inet/networklayer/contract/IInterfaceTable.h"
-#include "inet/networklayer/common/InterfaceEntry.h"
+#include "inet/networklayer/common/NetworkInterface.h"
 #include "inet/networklayer/ipv4/IIpv4RoutingTable.h"
 #include "inet/networklayer/ipv4/Ipv4Route.h"
 #include "inet/networklayer/ipv4/Ipv4InterfaceData.h"
@@ -85,7 +85,7 @@ void MultiRatAppManager::initialize(int stage)
         // any network-wide configurator (cars are created dynamically by SUMO),
         // and HostAutoConfigurator matches interface names exactly, so wlan0/
         // wlan1 never receive an IPv4 address. Assign them here, after every NIC
-        // has registered its InterfaceEntry, so the IPv4 stack has valid data.
+        // has registered its NetworkInterface, so the IPv4 stack has valid data.
         configureWlanInterfaces();
     }
 }
@@ -102,10 +102,10 @@ void MultiRatAppManager::configureWlanInterfaces()
     };
     for (const auto &w : wlans) {
         int idx = ratIndex(w.id);
-        InterfaceEntry *ie = ift_->findInterfaceByName(ifaceName_[idx].c_str());
+        NetworkInterface *ie = ift_->findInterfaceByName(ifaceName_[idx].c_str());
         if (!ie)
             continue;
-        auto *ipv4Data = ie->findProtocolData<Ipv4InterfaceData>();
+        auto *ipv4Data = ie->findProtocolDataForUpdate<Ipv4InterfaceData>();
         if (!ipv4Data)
             ipv4Data = ie->addProtocolData<Ipv4InterfaceData>();
         if (ipv4Data->getIPAddress().isUnspecified()) {
@@ -230,14 +230,14 @@ bool MultiRatAppManager::applyDefaultRoute(RatId target)
     if (!rt_ || !ift_)
         return false;
     int idx = ratIndex(target);
-    InterfaceEntry *ie = ift_->findInterfaceByName(ifaceName_[idx].c_str());
+    NetworkInterface *ie = ift_->findInterfaceByName(ifaceName_[idx].c_str());
     if (!ie) {
         EV_WARN << "No interface '" << ifaceName_[idx] << "' for RAT " << ratName(target) << endl;
         return false;
     }
     // The interface must carry IPv4 data (address/netmask) before we can route
     // through it; e.g. a cellular NIC may not be IP-configured yet.
-    if (!ie->findProtocolData<Ipv4InterfaceData>()) {
+    if (!ie->findProtocolDataForUpdate<Ipv4InterfaceData>()) {
         EV_WARN << "Interface '" << ifaceName_[idx] << "' has no IPv4 data yet for RAT "
                 << ratName(target) << "; deferring route install." << endl;
         return false;

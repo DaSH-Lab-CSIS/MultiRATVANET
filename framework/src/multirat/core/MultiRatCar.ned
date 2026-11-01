@@ -3,7 +3,7 @@
 // technologies simultaneously and switches the active one at the application
 // layer based on coverage and QoS.
 //
-// It extends the Simu5G NRCar (which already provides the LTE/5G-NR cellularNic,
+// It extends the Simu5G NrCar (which already provides the LTE/5G-NR cellularNic,
 // VeinsInetMobility, an IPv4 network layer and layer message-dispatchers) and
 // adds INET Ieee80211 interfaces for WiFi and a DSRC (802.11p @5.9 GHz)
 // approximation, wired into the same 'nl' network<->link dispatcher so that all
@@ -12,9 +12,9 @@
 package multiratvanet;
 
 import inet.linklayer.contract.IWirelessInterface;
-import simu5g.nodes.cars.NRCar;
+import simu5g.nodes.NrCar;
 
-module MultiRatCar extends NRCar
+module MultiRatCar extends NrCar
 {
     parameters:
         @display("i=device/car");
