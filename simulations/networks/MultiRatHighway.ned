@@ -12,6 +12,7 @@ package multiratvanet.simulations;
 import simu5g.simulations.nr.cars.Highway;
 import inet.physicallayer.wireless.ieee80211.packetlevel.Ieee80211ScalarRadioMedium;
 import inet.node.ethernet.Eth10G;
+import inet.node.ethernet.EthernetSwitch;
 import multiratvanet.WifiAp;
 import multiratvanet.DsrcRsu;
 import multiratvanet.RatStatsCollector;
@@ -37,18 +38,26 @@ network MultiRatHighway extends Highway
         dsrcRsu[numDsrcRsus]: DsrcRsu {
             @display("p=250,420;is=n");
         }
+        // Distribution network of all APs and RSUs: one LAN behind one router port.
+        wlanSwitch: EthernetSwitch {
+            @display("p=150,240;is=s");
+        }
         // Network-wide periodic (0.1s) RAT statistics: vehicles-per-RAT + avg RSSI.
         ratStatsCollector: RatStatsCollector {
             @display("p=50,420;is=s");
         }
 
     connections allowunconnected:
-        // Backhaul: every AP/RSU is wired to the core router over Ethernet, so
-        // the same server is reachable via cellular (UPF) and via WiFi/DSRC.
+        // Backhaul: every AP/RSU sits on one switched LAN with a single uplink to the core
+        // router, so the server is reachable via cellular (UPF) and via WiFi/DSRC. One LAN means
+        // one gateway MAC: a car that moves between APs/RSUs, or between DSRC and WiFi, keeps a
+        // valid ARP entry. (With one router port per AP/RSU, frames to the old port's MAC were
+        // dropped by the router.)
+        wlanSwitch.ethg++ <--> Eth10G <--> router.ethg++;
         for i=0..numWifiAps-1 {
-            wifiAp[i].ethg++ <--> Eth10G <--> router.ethg++;
+            wifiAp[i].ethg++ <--> Eth10G <--> wlanSwitch.ethg++;
         }
         for i=0..numDsrcRsus-1 {
-            dsrcRsu[i].ethg++ <--> Eth10G <--> router.ethg++;
+            dsrcRsu[i].ethg++ <--> Eth10G <--> wlanSwitch.ethg++;
         }
 }
