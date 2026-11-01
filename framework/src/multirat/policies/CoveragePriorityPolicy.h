@@ -4,7 +4,8 @@
 // A fixed preference order is scanned and the first present + in-range RAT is
 // chosen. A small "stickiness" rule keeps the current RAT if it is still usable
 // and of equal-or-higher priority than the best alternative, which suppresses
-// needless ping-pong at coverage borders.
+// needless ping-pong at coverage borders. Moving up to a higher-priority RAT waits for
+// 'timeToTrigger' seconds of it staying usable, so a briefly heard RSU/AP is not chased.
 //
 #ifndef MULTIRATVANET_COVERAGEPRIORITYPOLICY_H
 #define MULTIRATVANET_COVERAGEPRIORITYPOLICY_H
@@ -15,8 +16,8 @@ namespace multiratvanet {
 
 class CoveragePriorityPolicy : public IRatSelectionPolicy {
   public:
-    explicit CoveragePriorityPolicy(std::vector<RatId> order = defaultOrder())
-        : order_(std::move(order)) {}
+    explicit CoveragePriorityPolicy(std::vector<RatId> order = defaultOrder(), double timeToTrigger = 1.0)
+        : order_(std::move(order)), confirm_(timeToTrigger) {}
 
     static std::vector<RatId> defaultOrder() {
         return { RatId::DSRC, RatId::WIFI, RatId::NR, RatId::LTE, RatId::SIXG };
@@ -28,9 +29,10 @@ class CoveragePriorityPolicy : public IRatSelectionPolicy {
             if (usable(r, metrics)) { best = r; break; }
         }
         // Stickiness: stay on current if still usable and not worse than best.
-        if (usable(current, metrics) && rank(current) <= rank(best))
-            return current;
-        return best;
+        bool currentUsable = usable(current, metrics);
+        if (currentUsable && rank(current) <= rank(best))
+            best = current;
+        return confirm_.apply(current, best, currentUsable, metrics);
     }
 
     const char *name() const override { return "CoveragePriority"; }
@@ -42,6 +44,7 @@ class CoveragePriorityPolicy : public IRatSelectionPolicy {
         return (int)order_.size() + 1;
     }
     std::vector<RatId> order_;
+    SwitchConfirmation confirm_;
 };
 
 } // namespace multiratvanet
