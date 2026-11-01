@@ -5,7 +5,7 @@
 # Mirrors the opp_env install proven on anjuna3 (Ubuntu 22.04.5), but without Nix.
 # Contains NO research repo. Derive with `FROM vsim-base:<tag>` or bind-mount a repo at /workspace.
 #
-# Build:  docker build -t vsim-base:om6.3.0-inet4.6.0-veins5.3.1-s5g1.7.0-sumo1.22.0 .
+# Build:  docker build -t vsim-base:om6.3.0-inet4.6.0-veins5.3.1-s5g1.7.0-dash2-sumo1.22.0 .
 
 ARG UBUNTU_VERSION=22.04
 # base pinned by digest (multi-arch index) for reproducibility; override with --build-arg UBUNTU_DIGEST=...
@@ -18,6 +18,8 @@ ARG INET_VERSION=4.6.0
 ARG VEINS_VERSION=5.3.1
 ARG SIMU5G_VERSION=1.7.0
 ARG SUMO_VERSION=1.22.0
+# Revision of the DaSH patches in patches/ (INET + Simu5G); bump it whenever a patch changes (it is part of the image tag)
+ARG VSIM_PATCHSET=dash2
 ARG BUILD_MODE=release
 # 0 = use all cores (INET needs ~1 GB RAM per job with clang; lower this on small Docker VMs)
 ARG JOBS=0
@@ -131,9 +133,12 @@ RUN --mount=type=bind,source=dl,target=/opt/vsim/dl set -ex; \
     chmod -R a+rwX /opt/vsim/omnetpp
 
 # ---------------------------------------------------------------- INET
+COPY --chown=vsim:vsim patches/ /opt/vsim/patches/
 RUN --mount=type=bind,source=dl,target=/opt/vsim/dl set -ex; \
     vsim-fetch "https://github.com/inet-framework/inet/releases/download/v${INET_VERSION}/inet-${INET_VERSION}-src.tgz" inet; \
     cd inet; \
+    # DaSH fix for hosts with several 802.11 NICs (DSRC + WiFi cars); see README.md, "Patches"
+    patch -p1 < /opt/vsim/patches/inet-4.6.0-dash.patch; \
     set +e; . /opt/vsim/omnetpp/setenv -f; set -e; \
     for f in ${INET_FEATURES}; do opp_featuretool -v enable "$f"; done; \
     rm -rf examples/voipstream/osudp; \
@@ -176,6 +181,8 @@ RUN --mount=type=bind,source=dl,target=/opt/vsim/dl set -ex; \
     vsim-fetch "https://github.com/Unipisa/Simu5G/releases/download/v${SIMU5G_VERSION}/simu5g-${SIMU5G_VERSION}-src.tgz" simu5g \
       "https://github.com/Unipisa/Simu5G/archive/refs/tags/v${SIMU5G_VERSION}.tar.gz"; \
     cd simu5g; \
+    # DaSH fixes for UEs created at runtime (Veins/SUMO cars); see README.md, "Patches"
+    patch -p1 < /opt/vsim/patches/simu5g-1.7.0-dash.patch; \
     sed -i -E 's|-KINET_PROJ=[^ ]+|-KINET_PROJ=$(INET_ROOT)|' Makefile; \
     find . -name omnetpp.ini | xargs -r sed -i -E 's|^image-path|#image-path|'; \
     set +e; . /opt/vsim/omnetpp/setenv -f; set -e; \
@@ -194,8 +201,10 @@ COPY --chown=vsim:vsim --chmod=0755 scripts/smoke.sh      /opt/vsim/bin/vsim-smo
 
 # Lock file other images / the dashboard adapter layer can read: /opt/vsim/toolchain.json
 RUN set -ex; \
-    printf '{\n  "omnetpp": "%s",\n  "inet": "%s",\n  "veins": "%s",\n  "simu5g": "%s",\n  "sumo": "%s",\n  "sumo_reported": "%s",\n  "ubuntu": "%s",\n  "arch": "%s",\n  "build_mode": "%s",\n  "inet_features_extra": "%s",\n  "traci_clamp": "%s",\n  "traci": {"launchd": "veins_launchd", "host": "127.0.0.1", "port": 9999}\n}\n' \
-      "${OMNETPP_VERSION}" "${INET_VERSION}" "${VEINS_VERSION}" "${SIMU5G_VERSION}" "${SUMO_VERSION}" \
+    printf '{\n  "omnetpp": "%s",\n  "inet": "%s",\n  "veins": "%s",\n  "simu5g": "%s",\n  "patchset": "%s",\n  "inet_patch_sha256": "%s",\n  "simu5g_patch_sha256": "%s",\n  "sumo": "%s",\n  "sumo_reported": "%s",\n  "ubuntu": "%s",\n  "arch": "%s",\n  "build_mode": "%s",\n  "inet_features_extra": "%s",\n  "traci_clamp": "%s",\n  "traci": {"launchd": "veins_launchd", "host": "127.0.0.1", "port": 9999}\n}\n' \
+      "${OMNETPP_VERSION}" "${INET_VERSION}" "${VEINS_VERSION}" "${SIMU5G_VERSION}" \
+      "${VSIM_PATCHSET}" "$(sha256sum /opt/vsim/patches/inet-4.6.0-dash.patch | cut -d' ' -f1)" \
+      "$(sha256sum /opt/vsim/patches/simu5g-1.7.0-dash.patch | cut -d' ' -f1)" "${SUMO_VERSION}" \
       "$(sumo --version | head -n1 | tr -d '\"')" "${UBUNTU_VERSION}" "$(dpkg --print-architecture)" "${BUILD_MODE}" "${INET_FEATURES}" "${VEINS_TRACI_CLAMP}" \
       > /opt/vsim/toolchain.json
 
@@ -209,6 +218,7 @@ LABEL org.opencontainers.image.title="vsim-base" \
       org.opencontainers.image.description="Pinned OMNeT++/INET/Veins/Simu5G/SUMO toolchain (no research repo)" \
       dash.vsim.omnetpp="${OMNETPP_VERSION}" dash.vsim.inet="${INET_VERSION}" \
       dash.vsim.veins="${VEINS_VERSION}" dash.vsim.simu5g="${SIMU5G_VERSION}" \
+      dash.vsim.patchset="${VSIM_PATCHSET}" \
       dash.vsim.sumo="${SUMO_VERSION}" dash.vsim.contract="1"
 
 WORKDIR /workspace
