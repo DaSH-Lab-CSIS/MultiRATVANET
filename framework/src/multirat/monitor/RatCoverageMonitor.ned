@@ -17,6 +17,21 @@ simple RatCoverageMonitor
         @display("i=block/cogwheel");
 
         double updateInterval @unit(s) = default(0.1s);
+
+        // Where per-RAT signal and coverage come from:
+        //   "measured": the radios themselves. 802.11: power and SNIR of beacons received from
+        //               this RAT's infrastructure (RSU/AP); cellular: Simu5G downlink SINR of the
+        //               serving cell. A RAT is in range while it has been measured within
+        //               measurementMaxAge and is above its threshold (dsrc/wifiRssiThreshold,
+        //               lte/nrMinSinr). The *Range parameters and the path-loss proxy are unused.
+        //   "proxy":    distance to the nearest infrastructure node and a log-distance path-loss
+        //               estimate (the original behaviour; RATs with no infraType are always in range).
+        string signalSource = default("measured");
+        double measurementMaxAge @unit(s) = default(0.5s);
+        double lteMinSinr @unit(dB) = default(-5dB);
+        double nrMinSinr @unit(dB) = default(-5dB);
+        string dsrcNic = default("wlan[0]");   // car NIC whose radio carries DSRC / WiFi
+        string wifiNic = default("wlan[1]");
         bool useDistance = default(true);   // gate coverage on distance <= range
         bool useSignal = default(true);     // gate coverage on rssiProxy >= threshold
 

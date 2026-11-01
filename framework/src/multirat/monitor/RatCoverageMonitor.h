@@ -5,6 +5,8 @@
 #define MULTIRATVANET_RATCOVERAGEMONITOR_H
 
 #include <omnetpp.h>
+#include <cmath>
+#include <string>
 #include <vector>
 #include "base/RatTypes.h"
 
@@ -16,7 +18,11 @@ namespace multiratvanet {
 // Estimates per-RAT coverage for the parent vehicle and publishes a metric
 // vector consumed by the MultiRatAppManager.
 //
-class  RatCoverageMonitor : public omnetpp::cSimpleModule
+// signalSource "measured": signal and coverage come from the radios themselves
+// (802.11 beacons from RSUs/APs, Simu5G downlink SINR of the serving cell).
+// signalSource "proxy": the original distance-based estimate.
+//
+class  RatCoverageMonitor : public omnetpp::cSimpleModule, public omnetpp::cListener
 {
   public:
     // Snapshot of the latest per-RAT metrics (indexed by ratIndex()).
@@ -27,6 +33,10 @@ class  RatCoverageMonitor : public omnetpp::cSimpleModule
     virtual void initialize() override;
     virtual void handleMessage(omnetpp::cMessage *msg) override;
     virtual void finish() override;
+
+    // measurement feeds (signalSource == "measured")
+    virtual void receiveSignal(omnetpp::cComponent *source, omnetpp::simsignal_t id, omnetpp::cObject *obj, omnetpp::cObject *details) override;
+    virtual void receiveSignal(omnetpp::cComponent *source, omnetpp::simsignal_t id, double value, omnetpp::cObject *details) override;
 
   private:
     struct RatCfg {
@@ -42,6 +52,31 @@ class  RatCoverageMonitor : public omnetpp::cSimpleModule
     void collectInfra(omnetpp::cModule *root);
     void refresh();
     double proxyRssiDbm(double distanceMeters) const;
+    void applyMeasurement(int rat, RatMetrics &m, double now);
+    int ratOfWlan(const omnetpp::cModule *nic) const;
+
+    // One window of samples per RAT, collected between two refresh() calls.
+    // 802.11: strongest infrastructure beacon in the window; cellular: mean SINR.
+    struct Window {
+        int n = 0;
+        double bestRssiDbm = -1e9;  // 802.11 only
+        double snirOfBest = -1e9;   // 802.11: SNIR of that beacon (dB)
+        double sinrSum = 0;         // cellular: sum of SINR samples (dB)
+    };
+    struct Measured {
+        bool valid = false;
+        double rssiDbm = NAN;       // NaN for cellular (Simu5G reports SINR, not power)
+        double sinrDb = NAN;
+        double time = -1;           // sim time of the last window with samples
+        long samples = 0;           // total samples over the run (diagnostics)
+    };
+    Window window_[(int)RatId::COUNT];
+    Measured measured_[(int)RatId::COUNT];
+    bool measuredMode_ = true;
+    double measurementMaxAge_ = 0.5;
+    double cellularMinSinrDb_[(int)RatId::COUNT];
+    std::string dsrcNic_, wifiNic_;
+    omnetpp::simsignal_t measuredSinrDlSignal_ = -1;
 
     RatCfg cfg_[(int)RatId::COUNT];
     std::vector<inet::IMobility *> infra_[(int)RatId::COUNT];

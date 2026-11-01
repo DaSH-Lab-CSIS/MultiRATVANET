@@ -6,9 +6,18 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <typeinfo>
 
 #include "inet/mobility/contract/IMobility.h"
 #include "inet/common/geometry/common/Coord.h"
+#include "inet/common/ModuleAccess.h"
+#include "inet/common/Simsignals.h"
+#include "inet/physicallayer/wireless/common/contract/packetlevel/IRadio.h"
+#include "inet/physicallayer/wireless/common/contract/packetlevel/IRadioMedium.h"
+#include "inet/physicallayer/wireless/common/contract/packetlevel/IReception.h"
+#include "inet/physicallayer/wireless/common/contract/packetlevel/IScalarSignalAnalogModel.h"
+#include "inet/physicallayer/wireless/common/contract/packetlevel/ISnir.h"
+#include "inet/physicallayer/wireless/common/contract/packetlevel/ITransmission.h"
 
 namespace multiratvanet {
 
@@ -84,6 +93,24 @@ void RatCoverageMonitor::initialize()
                    "distance-based coverage disabled." << endl;
 
     discoverInfrastructure();
+
+    const std::string source = par("signalSource").stdstringValue();
+    if (source != "measured" && source != "proxy")
+        throw cRuntimeError("signalSource must be \"measured\" or \"proxy\", got \"%s\"", source.c_str());
+    measuredMode_ = (source == "measured");
+    measurementMaxAge_ = par("measurementMaxAge").doubleValue();
+    for (int i = 0; i < (int)RatId::COUNT; ++i)
+        cellularMinSinrDb_[i] = -1e9;
+    cellularMinSinrDb_[(int)RatId::LTE] = par("lteMinSinr").doubleValue();
+    cellularMinSinrDb_[(int)RatId::NR] = par("nrMinSinr").doubleValue();
+    dsrcNic_ = par("dsrcNic").stdstringValue();
+    wifiNic_ = par("wifiNic").stdstringValue();
+    if (measuredMode_ && car) {
+        // Signals propagate up the module tree: one subscription on the car sees every radio in it.
+        measuredSinrDlSignal_ = registerSignal("measuredSinrDl");
+        car->subscribe(inet::receptionEndedSignal, this);
+        car->subscribe(measuredSinrDlSignal_, this);
+    }
 
     lastSampleTime_ = simTime().dbl();
     timer_ = new cMessage("coverageUpdate");
@@ -165,20 +192,25 @@ void RatCoverageMonitor::refresh()
             }
         }
 
-        double rssi = proxyRssiDbm(minDist);
-        bool distOk = !useDistance_ || (minDist <= cfg_[i].range);
-        bool sigOk = !useSignal_ || (rssi >= cfg_[i].rssiThreshold);
-        bool inRange = distOk && sigOk && (cfg_[i].infraType.empty() || !infra_[i].empty());
-
-        m.inRange = inRange;
-        m.rssiDbm = rssi;
-        m.sinrDb = rssi + 100.0; // crude SINR proxy from RSSI (dB above -100 noise floor)
         m.distanceToInfra = minDist;
+        if (measuredMode_) {
+            applyMeasurement(i, m, simTime().dbl());
+        }
+        else {
+            double rssi = proxyRssiDbm(minDist);
+            bool distOk = !useDistance_ || (minDist <= cfg_[i].range);
+            bool sigOk = !useSignal_ || (rssi >= cfg_[i].rssiThreshold);
+            m.inRange = distOk && sigOk && (cfg_[i].infraType.empty() || !infra_[i].empty());
+            m.rssiDbm = rssi;
+            m.sinrDb = rssi + 100.0; // crude SINR proxy from RSSI (dB above -100 noise floor)
+        }
+        bool inRange = m.inRange;
         if (minDist < minInfraDist_[i])
             minInfraDist_[i] = minDist;
 
         emit(inRangeSignal_[i], (long)(inRange ? 1 : 0));
-        emit(rssiSignal_[i], rssi);
+        if (!std::isnan(m.rssiDbm))
+            emit(rssiSignal_[i], m.rssiDbm);
         if (inRange)
             ++coverage;
     }
@@ -215,6 +247,105 @@ void RatCoverageMonitor::refresh()
     wasOutage_ = nowOutage;
     prevCoverage_ = coverage;
     emit(connectivitySignal_, (long)(nowOutage ? 0 : 1));
+}
+
+// Turns the samples collected since the last refresh into this RAT's metrics. A RAT is in
+// range only while it is being measured: an 802.11 beacon from its infrastructure, or a
+// Simu5G SINR report from a serving cell, within the last measurementMaxAge seconds, and
+// above its threshold (RSSI for 802.11, SINR for cellular). Distance plays no part.
+void RatCoverageMonitor::applyMeasurement(int i, RatMetrics &m, double now)
+{
+    Window &w = window_[i];
+    Measured &x = measured_[i];
+    bool cellular = (i == (int)RatId::LTE || i == (int)RatId::NR);
+    if (w.n > 0) {
+        x.valid = true;
+        x.time = now;
+        x.samples += w.n;
+        if (cellular) {
+            x.rssiDbm = NAN;
+            x.sinrDb = w.sinrSum / w.n;
+        }
+        else {
+            x.rssiDbm = w.bestRssiDbm;
+            x.sinrDb = w.snirOfBest;
+        }
+    }
+    w = Window();
+
+    bool fresh = x.valid && now - x.time <= measurementMaxAge_;
+    bool sigOk = cellular ? x.sinrDb >= cellularMinSinrDb_[i] : x.rssiDbm >= cfg_[i].rssiThreshold;
+    m.inRange = fresh && (!useSignal_ || sigOk);
+    m.rssiDbm = fresh ? x.rssiDbm : NAN;
+    m.sinrDb = fresh ? x.sinrDb : -50.0;
+}
+
+int RatCoverageMonitor::ratOfWlan(const cModule *nic) const
+{
+    if (!nic)
+        return -1;
+    const std::string name = nic->getFullName();
+    if (name == dsrcNic_)
+        return (int)RatId::DSRC;
+    if (name == wifiNic_)
+        return (int)RatId::WIFI;
+    return -1;
+}
+
+// 802.11: every reception that ends at one of this car's radios. Only frames sent by this
+// RAT's infrastructure (RSU/AP, matched by NED type like the proxy discovery) count;
+// frames from other vehicles are ignored.
+void RatCoverageMonitor::receiveSignal(cComponent *source, simsignal_t id, cObject *obj, cObject *details)
+{
+    using namespace inet::physicallayer;
+    if (id != inet::receptionEndedSignal)
+        return;
+    auto reception = dynamic_cast<const IReception *>(obj);
+    auto receiverModule = dynamic_cast<cModule *>(source);
+    if (!reception || !receiverModule)
+        return;
+    int rat = ratOfWlan(receiverModule->getParentModule());
+    if (rat < 0 || !cfg_[rat].has)
+        return;
+    auto transmission = reception->getTransmission();
+    auto medium = transmission->getMedium();
+    auto txRadio = medium->getRadio(transmission->getTransmitterRadioId());  // nullptr if that node is gone
+    auto txModule = dynamic_cast<const cModule *>(txRadio);
+    if (!txModule)
+        return;
+    const cModule *txNode = inet::findContainingNode(txModule);
+    const char *txType = txNode && txNode->getComponentType() ? txNode->getComponentType()->getName() : "";
+    if (!icontains(txType, cfg_[rat].infraType))
+        return;
+
+    auto power = dynamic_cast<const IScalarSignalAnalogModel *>(reception->getAnalogModel());
+    if (!power)
+        throw cRuntimeError("signalSource=\"measured\" needs a scalar 802.11 radio model (got %s)",
+                reception->getAnalogModel() ? typeid(*reception->getAnalogModel()).name() : "none");
+    double rssiDbm = 10.0 * std::log10(inet::units::values::mW(power->getPower()).get());
+    double snirDb = 10.0 * std::log10(medium->getSNIR(reception->getReceiverRadio(), transmission)->getMin());
+    Window &w = window_[rat];
+    ++w.n;
+    if (rssiDbm > w.bestRssiDbm) {
+        w.bestRssiDbm = rssiDbm;
+        w.snirOfBest = snirDb;
+    }
+}
+
+// Simu5G: downlink SINR measured by the serving cell's feedback computation, emitted by the
+// UE's channel model ("nrChannelModel[..]" for NR, "channelModel[..]" for LTE).
+void RatCoverageMonitor::receiveSignal(cComponent *source, simsignal_t id, double value, cObject *details)
+{
+    if (id != measuredSinrDlSignal_)
+        return;
+    const char *name = source->getName();
+    int rat = std::string(name) == "nrChannelModel" ? (int)RatId::NR
+            : std::string(name) == "channelModel" ? (int)RatId::LTE : -1;
+    if (rat < 0 || !cfg_[rat].has || std::isnan(value))
+        return;
+    Window &w = window_[rat];
+    ++w.n;
+    w.sinrSum += value;
 }
 
 bool RatCoverageMonitor::isInRange(RatId r) const
@@ -275,6 +406,8 @@ void RatCoverageMonitor::finish()
         recordScalar((base + ".infraNodes").c_str(), (double)infra_[i].size());
         recordScalar((base + ".minInfraDist").c_str(),
                 minInfraDist_[i] >= 1e9 ? -1.0 : minInfraDist_[i], "m");
+        if (measuredMode_)
+            recordScalar((base + ".measuredSamples").c_str(), (double)measured_[i].samples);
     }
     // Observed vehicle coordinate range (to align RSU/AP placement to the frame).
     if (selfXmax_ >= selfXmin_) {
