@@ -16,7 +16,7 @@ import re
 import sys
 from datetime import datetime, timezone
 
-CACHE_VERSION = 6
+CACHE_VERSION = 7
 LOG_TAIL = 200
 BIN_STEPS = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500]
 MAX_POINTS = 120
@@ -25,12 +25,12 @@ RAT_SERIES = [("DSRC", "vehiclesDsrc"), ("WiFi", "vehiclesWifi"), ("NR", "vehicl
               ("LTE", "vehiclesLte"), ("Unconnected", "vehiclesUnconnected")]
 RAT_SHARES = [("DSRC", "DSRC"), ("WiFi", "WIFI"), ("NR", "NR"), ("LTE", "LTE")]
 
-RE_CAR_APP = re.compile(r"\.car\[\d+\]\.app\[0\]$")
-RE_SERVER_APP = re.compile(r"\.server\.app\[0\]$")
+RE_CAR_APP = re.compile(r"\.car\[\d+\]\.app\[(\d+)\]$")
+RE_SERVER_APP = re.compile(r"\.server\.app\[(\d+)\]$")
 RE_MANAGER = re.compile(r"\.car\[\d+\]\.multiRatAppManager$")
 RE_COVERAGE = re.compile(r"\.car\[\d+\]\.ratCoverageMonitor$")
 RE_STATS = re.compile(r"\.ratStatsCollector$")
-RE_CAR_PART = re.compile(r"\.car\[(\d+)\]\.(multiRatAppManager|ratCoverageMonitor|app\[0\])$")
+RE_CAR_PART = re.compile(r"\.car\[(\d+)\]\.(multiRatAppManager|ratCoverageMonitor|app\[\d+\])$")
 RE_INFRA_POS = re.compile(r"^\*+\.(\w+)\[(\d+|\*)\]\.mobility\.initial([XY])$")
 
 
@@ -95,18 +95,39 @@ def read_sca(path):
     return attrs, config, scalars, stats, pars, descr
 
 
+def class_names(config):
+    """server app index -> traffic class name (MultiRatSink), or "app[k]" for anything else"""
+    names = {}
+    for key, v in config.items():
+        m = re.match(r"^\*+\.server\.app\[(\d+)\]\.trafficClass$", key)
+        if m:
+            names.setdefault(int(m.group(1)), v)
+    return names
+
+
 def summarize(config, scalars, stats, sim_time):
-    sent = rcvd = rcvd_bytes = 0.0
+    names = class_names(config)
+    cls = {}  # app index -> counters
     per_car = {}
     for mod, name, v in scalars:
         if v is None:
             continue
-        if RE_CAR_APP.search(mod) and name == "packetSent:count":
-            sent += v
-        elif RE_SERVER_APP.search(mod) and name == "packetReceived:count":
-            rcvd += v
-        elif RE_SERVER_APP.search(mod) and name == "packetReceived:sum(packetBytes)":
-            rcvd_bytes += v
+        m = RE_CAR_APP.search(mod)
+        if m and name == "packetSent:count":
+            cls.setdefault(int(m.group(1)), {}).setdefault("sent", 0)
+            cls[int(m.group(1))]["sent"] += v
+            continue
+        m = RE_SERVER_APP.search(mod)
+        if m:
+            c = cls.setdefault(int(m.group(1)), {})
+            if name == "packetReceived:count":
+                c["received"] = c.get("received", 0) + v
+            elif name == "packetReceived:sum(packetBytes)":
+                c["bytes"] = c.get("bytes", 0) + v
+            elif name == "packetsWithinDeadline":
+                c["within"] = v
+            elif name == "deadline":
+                c["deadline_s"] = v
         elif RE_MANAGER.search(mod) or RE_COVERAGE.search(mod):
             car = mod.rsplit(".", 1)[0]
             per_car.setdefault(car, {})[name] = v
@@ -120,37 +141,84 @@ def summarize(config, scalars, stats, sim_time):
         vals = [c[key] for c in per_car.values() if key in c]
         return sum(vals) / len(vals) if vals else None
 
-    delay = {}
+    interruption = {"count": 0, "sum": 0.0, "max": None, "lost": 0.0}
     for (mod, name), fields in stats.items():
-        if RE_SERVER_APP.search(mod) and name == "endToEndDelay:histogram":
-            delay = fields
+        m = RE_SERVER_APP.search(mod)
+        if not m:
+            continue
+        c = cls.setdefault(int(m.group(1)), {})
+        if name == "endToEndDelay:histogram":
+            c["delay"] = fields
+        elif name == "switchInterruption:histogram" and fields.get("count"):
+            interruption["count"] += fields["count"]
+            interruption["sum"] += fields.get("sum") or 0
+            if fields.get("max") is not None:
+                interruption["max"] = max(interruption["max"] or 0, fields["max"])
+        elif name == "switchLoss:histogram" and fields.get("count"):
+            interruption["lost"] += fields.get("sum") or 0
+
+    classes = []
+    for k in sorted(cls):
+        c = cls[k]
+        if not c.get("sent") or "received" not in c:
+            continue  # e.g. V2V beacons: no server side
+        d = c.get("delay", {})
+        dc, ds = d.get("count"), d.get("sum")
+        classes.append({
+            "name": names.get(k, f"app[{k}]"),
+            "sent": c["sent"],
+            "received": c["received"],
+            "pdr": c["received"] / c["sent"],
+            "within_deadline": c["within"] / c["sent"] if "within" in c and c.get("deadline_s") else None,
+            "deadline_ms": c["deadline_s"] * 1e3 if c.get("deadline_s") else None,
+            "throughput_mbps": c.get("bytes", 0) * 8e-6 / sim_time if sim_time else None,
+            "delay_mean_ms": ds / dc * 1e3 if dc else None,
+            "delay_max_ms": d["max"] * 1e3 if d.get("max") is not None and dc else None,
+        })
+    sent = sum(c["sent"] for c in classes)
+    rcvd = sum(c["received"] for c in classes)
+    dn = sum(c["received"] for c in classes if c["delay_mean_ms"] is not None)
+    delay_mean = sum(c["delay_mean_ms"] * c["received"] for c in classes if c["delay_mean_ms"] is not None) / dn if dn else None
+    delay_max = max((c["delay_max_ms"] for c in classes if c["delay_max_ms"] is not None), default=None)
+
     shares = {label: mean(f"{key}.selectionShare") for label, key in RAT_SHARES}
     if cellular_merged(config):
         shares = {"DSRC": shares["DSRC"], "WiFi": shares["WiFi"],
                   "Cellular": (shares["NR"] or 0) + (shares["LTE"] or 0)}
-    d_count, d_sum = delay.get("count"), delay.get("sum")
+    inputs = {}
+    for label, key in RAT_SHARES:
+        vals = {f: mean(f"{key}.inRange{f}") for f in ("SinrMargin", "Load", "Capacity", "Latency")}
+        if any(v is not None for v in vals.values()):
+            inputs[label] = vals
     return {
         "vehicles": n,
+        "classes": classes,
         "sent": sent,
         "received": rcvd,
         "pdr": rcvd / sent if sent else None,
-        "throughput_mbps": rcvd_bytes * 8e-6 / sim_time if sim_time and sent else None,
-        "delay_mean_ms": d_sum / d_count * 1e3 if d_count else None,
-        "delay_max_ms": delay["max"] * 1e3 if delay.get("max") is not None and d_count else None,
+        "throughput_mbps": sum(c["throughput_mbps"] or 0 for c in classes) if classes else None,
+        "delay_mean_ms": delay_mean,
+        "delay_max_ms": delay_max,
         "handovers": total("handoversTotal"),
         "handovers_per_vehicle": total("handoversTotal") / n if n else None,
         "handovers_failed": total("handoverFailed:count"),
         "ping_pong": total("pingPongTotal"),
         "connectivity": mean("connectivityRatio"),
         "outage_s": total("outageTimeTotal"),
+        "interruption_count": interruption["count"],
+        "interruption_mean_ms": interruption["sum"] / interruption["count"] * 1e3 if interruption["count"] else None,
+        "interruption_max_ms": interruption["max"] * 1e3 if interruption["max"] is not None else None,
+        "interruption_lost": interruption["lost"],
         "shares": shares,
+        "inputs": inputs,
     }
 
 
 def scenario_setup(config, pars, scalars, descr):
     """What the vehicles drove through and how they decided: effective values for the report"""
     one = lambda part: next(iter(pars.get(part, {}).values()), {})  # parameters of the first car seen
-    mgr, mon, app = one("multiRatAppManager"), one("ratCoverageMonitor"), one("app[0]")
+    mgr, mon = one("multiRatAppManager"), one("ratCoverageMonitor")
+    apps = [one(k) for k in sorted((k for k in pars if k.startswith("app[")), key=lambda k: int(k[4:-1]))]
     infra_count = {}
     for mod, name, v in scalars:
         if RE_COVERAGE.search(mod) and name.endswith(".infraNodes") and v is not None:
@@ -188,12 +256,24 @@ def scenario_setup(config, pars, scalars, descr):
             "interface": mgr.get(pre + "Interface"),
         })
     pick = lambda *keys: {k: config[k] for k in keys if k in config}
-    rate = None
-    try:
-        size_b = float(re.match(r"[0-9.]+", app.get("messageLength", "")).group(0))
-        rate = size_b * 8 / parse_time(app.get("sendInterval")) / 1e3
-    except (AttributeError, TypeError, ZeroDivisionError):
-        pass
+    deadlines = {}
+    for key, v in config.items():
+        m = re.match(r"^\*+\.server\.app\[(\d+)\]\.deadline$", key)
+        if m:
+            deadlines.setdefault(int(m.group(1)), v)
+    traffic = []
+    for k, app in enumerate(apps):
+        if "messageLength" not in app or "sendInterval" not in app:
+            continue
+        rate = None
+        try:
+            rate = float(re.match(r"[0-9.]+", app["messageLength"]).group(0)) * 8 / parse_time(app["sendInterval"]) / 1e3
+        except (AttributeError, TypeError, ZeroDivisionError):
+            pass
+        traffic.append({"name": app.get("trafficClass", f"app[{k}]"), "app": app.get("typename"),
+                        "mode": app.get("mode", "cbr"), "packet": app["messageLength"], "interval": app["sendInterval"],
+                        "on": app.get("onTime"), "off": app.get("offTime"), "destination": app.get("destAddress", app.get("destAddresses")),
+                        "deadline": deadlines.get(k), "kbps": round(rate, 1) if rate else None})
     return {
         "descriptions": list(dict.fromkeys(descr)),
         "launch": config.get("*.veinsManager.launchConfig"),
@@ -201,9 +281,7 @@ def scenario_setup(config, pars, scalars, descr):
         "decision": {k: mgr.get(k) for k in ("policy", "decisionInterval", "decideOnlyOnCoverageChange", "handoverExecDelay",
                                               "pingPongWindow", "startTime", "ensembleWeightCoverage", "ensembleWeightSinr",
                                               "ensembleWeightLatency", "ensembleWeightLoad", "ensembleStickiness") if k in mgr},
-        "traffic": {"app": app.get("typename"), "destination": app.get("destAddresses"), "packet": app.get("messageLength"),
-                    "interval": app.get("sendInterval"), "start": app.get("startTime"),
-                    "kbps_per_vehicle": round(rate, 1) if rate else None},
+        "traffic": traffic,
         "signal_model": {k: mon.get(k) for k in ("signalSource", "measurementMaxAge", "nrMinSinr", "lteMinSinr", "useDistance", "useSignal",
                                                   "txPowerDbm", "pathLossExponent", "referenceLossDb", "updateInterval") if k in mon},
         "cellular": pick("**.numBands", "**.ueTxPower", "**.eNodeBTxPower",
@@ -221,7 +299,7 @@ def cellular_merged(config):
     return lte is not None and lte == nr
 
 
-def read_vec(path, merged):
+def read_vec(path, merged, names):
     """bin the run's time series; returns (t, series, t_end)"""
     want = {}  # vector id -> (kind, label)
     with open(path, errors="replace") as f:
@@ -243,7 +321,8 @@ def read_vec(path, merged):
             elif RE_SERVER_APP.search(mod) and name == "packetReceived:vector(packetBytes)":
                 want[vid] = ("delivered", None)
             elif RE_SERVER_APP.search(mod) and name == "endToEndDelay:vector":
-                want[vid] = ("delay", None)
+                k = int(RE_SERVER_APP.search(mod).group(1))
+                want[vid] = ("delay", names.get(k, f"app[{k}]"))
             elif RE_MANAGER.search(mod) and name == "handoverCount:vector":
                 want[vid] = ("handover", None)
     samples = {vid: [] for vid in want}
@@ -277,7 +356,7 @@ def bin_series(want, samples, t_end):
     rat = {}
     rat_counts = {}
     offered, delivered = [0.0] * nb, [0.0] * nb
-    dsum, dcnt, ho = [0.0] * nb, [0] * nb, [0] * nb
+    dsum, dcnt, ho = {}, {}, [0] * nb
     for vid, (kind, label) in want.items():
         pts = samples[vid]
         if kind == "rat":
@@ -301,10 +380,11 @@ def bin_series(want, samples, t_end):
             for x, v in pts:
                 delivered[idx(x)] += v
         elif kind == "delay":
+            ds, dc = dsum.setdefault(label, [0.0] * nb), dcnt.setdefault(label, [0] * nb)
             for x, v in pts:
                 i = idx(x)
-                dsum[i] += v
-                dcnt[i] += 1
+                ds[i] += v
+                dc[i] += 1
         elif kind == "handover":
             for x, _ in pts:
                 ho[idx(x)] += 1
@@ -316,7 +396,7 @@ def bin_series(want, samples, t_end):
         "rat": {lbl: rat[lbl] for lbl in order},
         "offered_mbps": [round(v * scale, 6) for v in offered],
         "delivered_mbps": [round(v * scale, 6) for v in delivered],
-        "delay_ms": [round(s / c * 1e3, 4) if c else None for s, c in zip(dsum, dcnt)],
+        "delay_ms": {lbl: [round(s / c * 1e3, 4) if c else None for s, c in zip(dsum[lbl], dcnt[lbl])] for lbl in dsum},
         "handovers": ho,
     }
 
@@ -359,7 +439,7 @@ def load_run(run_dir):
         t_end = 0.0
         series = None
         if vecs:
-            want, samples, t_end = read_vec(vecs[0], merged)
+            want, samples, t_end = read_vec(vecs[0], merged, class_names(config))
             series = bin_series(want, samples, t_end)
         sim_time = parse_time(meta.get("sim_time")) or parse_time(config.get("sim-time-limit")) or t_end
         try:
@@ -655,13 +735,27 @@ function renderRun(r) {
   const s = r.summary;
   root.append(el("h2", { text: "Final results" }));
   if (s) {
-    const tiles = el("div", { class: "tiles" },
-      tile(pct(s.pdr), "Delivery ratio", `${fmt(s.received, 0)} of ${fmt(s.sent, 0)} packets`),
+    const classes = s.classes || [];
+    const tiles = el("div", { class: "tiles" });
+    if (classes.length > 1) {
+      for (const c of classes) {
+        tiles.append(tile(pct(c.pdr), `${c.name}: delivered`, `${fmt(c.received, 0)} of ${fmt(c.sent, 0)} packets`));
+        if (c.within_deadline != null)
+          tiles.append(tile(pct(c.within_deadline), `${c.name}: on time`, `sent and arrived within ${fmt(c.deadline_ms, 0)} ms`));
+        tiles.append(tile(fmt(c.delay_mean_ms, 1), `${c.name}: mean delay`, c.delay_max_ms != null ? `worst ${fmt(c.delay_max_ms, 0)} ms` : null, "ms"));
+      }
+    } else {
+      tiles.append(tile(pct(s.pdr), "Delivery ratio", `${fmt(s.received, 0)} of ${fmt(s.sent, 0)} packets`),
+                   tile(fmt(s.delay_mean_ms, 1), "Mean end-to-end delay", s.delay_max_ms != null ? `worst ${fmt(s.delay_max_ms, 0)} ms` : null, "ms"));
+    }
+    tiles.append(
       tile(fmt(s.throughput_mbps, 3), "Throughput at server", `over ${fmt(r.sim_time, 0)} s`, "Mbit/s"),
-      tile(fmt(s.delay_mean_ms, 1), "Mean end-to-end delay", s.delay_max_ms != null ? `worst ${fmt(s.delay_max_ms, 0)} ms` : null, "ms"),
-      tile(fmt(s.handovers_per_vehicle, 2), "Handovers per vehicle", `${fmt(s.handovers, 0)} total, ${fmt(s.handovers_failed, 0)} failed, ${fmt(s.ping_pong, 0)} ping-pong`),
-      tile(fmt(s.vehicles, 0), "Vehicles", null),
-      tile(pct(s.connectivity), "Connectivity", `${fmt(s.outage_s, 1)} s outage in total`));
+      tile(fmt(s.handovers_per_vehicle, 2), "Switches per vehicle", `${fmt(s.handovers, 0)} total, ${fmt(s.ping_pong, 0)} ping-pong`));
+    if (s.interruption_count)
+      tiles.append(tile(fmt(s.interruption_mean_ms, 1), "Switch interruption (mean)",
+                        `worst ${fmt(s.interruption_max_ms, 0)} ms over ${fmt(s.interruption_count, 0)} switches, ${fmt(s.interruption_lost, 0)} packets lost`, "ms"));
+    tiles.append(tile(fmt(s.vehicles, 0), "Vehicles", null),
+                 tile(pct(s.connectivity), "Connectivity", `${fmt(s.outage_s, 1)} s with no usable RAT in total`));
     root.append(tiles);
     const share = el("div", { class: "card", style: "margin-top:10px" }, el("h3", { text: "Time on each RAT (mean selection share per vehicle)" }));
     const lg = el("div", { class: "legend" });
@@ -672,6 +766,13 @@ function renderRun(r) {
     share.append(lg);
     if (r.cellular_merged) share.append(el("p", { class: "note", text: "LTE and NR use the same IP interface in this run, so the manager cannot tell them apart; they are shown together as Cellular." }));
     root.append(share);
+    if (s.inputs && Object.keys(s.inputs).length) {
+      const inp = el("div", { class: "card", style: "margin-top:10px" }, el("h3", { text: "What the policies saw (average while each RAT was in range)" }));
+      inp.append(simpleTable(["RAT", "SINR margin", "Load", "Capacity", "Latency estimate"],
+        Object.entries(s.inputs).map(([k, v]) => [k, v.SinrMargin != null ? fmt(v.SinrMargin, 1) + " dB" : null, v.Load != null ? pct(v.Load) : null,
+                                                 v.Capacity != null ? fmt(v.Capacity, 1) + " Mbit/s" : null, v.Latency != null ? fmt(v.Latency, 2) + " ms" : null]), [1, 2, 3, 4]));
+      root.append(inp);
+    }
   } else {
     root.append(el("div", { class: "card empty", text: "This run produced no result files. See the console log below." }));
   }
@@ -686,8 +787,9 @@ function renderRun(r) {
     g.append(chart({ title: "Throughput, Mbit/s", unit: "Mbit/s", t, digits: 3,
                      series: [{ name: "Offered (vehicles)", color: "--s1", values: S.offered_mbps },
                               { name: "Delivered (server)", color: "--s2", values: S.delivered_mbps }] }));
+    const dl = Array.isArray(S.delay_ms) ? { Delay: S.delay_ms } : S.delay_ms;
     g.append(chart({ title: "Mean end-to-end delay, ms", unit: "ms", t, digits: 1,
-                     series: [{ name: "Delay", color: "--s1", values: S.delay_ms }] }));
+                     series: Object.entries(dl).map(([k, v], i) => ({ name: k, color: `--s${i + 1}`, values: v })) }));
     g.append(chart({ title: "Handovers per bin", unit: "", t, digits: 0, bars: true,
                      series: [{ name: "Handovers", color: "--s1", values: S.handovers }], empty: "No handovers in this run" }));
     root.append(g);
@@ -770,9 +872,9 @@ function renderSetup(r) {
        ["Refreshed every", sm.updateInterval], ["In range needs", [sm.useDistance === "true" ? "within range" : null, sm.useSignal === "true" ? "above min RSSI" : null].filter(Boolean).join(" and ")],
        ["Caveat", "a RAT with no towers (LTE here) scores as if the car sat under one"]]));
   right.append(el("h3", { text: "Traffic", style: "margin-top:12px" }));
-  const t = u.traffic;
-  right.append(kvList([["Each vehicle sends", `${t.packet} every ${t.interval} to ${t.destination}` + (t.kbps_per_vehicle ? ` (${fmt(t.kbps_per_vehicle, 1)} kbit/s)` : "")],
-    ["Starting at", t.start], ["Application", t.app]]));
+  right.append(kvList((Array.isArray(u.traffic) ? u.traffic : []).map(t => [t.name,
+    `${t.packet} every ${t.interval}` + (t.mode === "onoff" ? ` in bursts (on ${t.on}, off ${t.off})` : "") +
+    (t.kbps ? `, ${fmt(t.kbps, 1)} kbit/s while sending` : "") + ` to ${t.destination}` + (t.deadline ? `, deadline ${t.deadline}` : "")])));
   right2.append(el("h3", { text: "Cellular (Simu5G)", style: "margin-top:12px" }));
   right2.append(kvList(Object.entries(u.cellular).map(([k, v]) => [k.replace(/^\*\.car\[\*\]\.|^\*+\./, ""), v])));
   g.append(right2);
@@ -790,6 +892,7 @@ function renderHistory() {
   const cols = [["Started", r => when(r.started)], ["Run", label], ["Config", r => r.config || (r.meta && r.meta.config) || "–"],
     ["Status", r => r.status], ["Sim time", r => r.sim_time != null ? fmt(r.sim_time, 0) + " s" : "–", 1],
     ["Vehicles", r => r.summary ? fmt(r.summary.vehicles, 0) : "–", 1], ["Delivery", r => r.summary ? pct(r.summary.pdr) : "–", 1],
+    ["Safety on time", r => { const c = r.summary && (r.summary.classes || []).find(x => x.within_deadline != null); return c ? pct(c.within_deadline) : "–"; }, 1],
     ["Throughput", r => r.summary && r.summary.throughput_mbps != null ? fmt(r.summary.throughput_mbps, 3) + " Mbit/s" : "–", 1],
     ["Delay", r => r.summary && r.summary.delay_mean_ms != null ? fmt(r.summary.delay_mean_ms, 1) + " ms" : "–", 1],
     ["HO/veh", r => r.summary ? fmt(r.summary.handovers_per_vehicle, 2) : "–", 1]];
