@@ -78,7 +78,10 @@ void MultiRatAppManager::initialize(int stage)
 
         decisionTimer_ = new cMessage("ratDecision");
         applyTimer_ = new cMessage("applyHandover");
-        scheduleAt(simTime() + par("startTime").doubleValue(), decisionTimer_);
+        // Random phase within one decision interval: cars appear on SUMO's time grid, and
+        // decisions in lockstep would make every car switch (and ARP, and associate) at the
+        // same instant, which real cars do not.
+        scheduleAt(simTime() + par("startTime").doubleValue() + uniform(0, decisionInterval_), decisionTimer_);
     }
     else if (stage == inet::INITSTAGE_LAST) {
         // The DSRC/WiFi NICs we add on top of the Simu5G car are not seen by
