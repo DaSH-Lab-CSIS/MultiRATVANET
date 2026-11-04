@@ -16,7 +16,7 @@ import re
 import sys
 from datetime import datetime, timezone
 
-CACHE_VERSION = 7
+CACHE_VERSION = 8
 LOG_TAIL = 200
 BIN_STEPS = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500]
 MAX_POINTS = 120
@@ -292,6 +292,100 @@ def scenario_setup(config, pars, scalars, descr):
     }
 
 
+MAPS = {}  # network file -> simplified road map, shared by all runs that use it
+
+
+def repo_roots():
+    here = os.path.dirname(os.path.abspath(__file__))
+    return [os.environ.get("MRV_REPO", ""), os.path.dirname(here), "/workspace"]
+
+
+def simplify(pts, tol):
+    """Douglas-Peucker on a polyline [(x, y), ...]"""
+    if len(pts) < 3:
+        return pts
+    (x1, y1), (x2, y2) = pts[0], pts[-1]
+    dx, dy = x2 - x1, y2 - y1
+    norm = (dx * dx + dy * dy) ** 0.5 or 1e-9
+    far, idx = 0, 0
+    for i in range(1, len(pts) - 1):
+        d = abs(dy * pts[i][0] - dx * pts[i][1] + x2 * y1 - y2 * x1) / norm
+        if d > far:
+            far, idx = d, i
+    if far <= tol:
+        return [pts[0], pts[-1]]
+    return simplify(pts[:idx + 1], tol)[:-1] + simplify(pts[idx:], tol)
+
+
+def road_map(config):
+    """Road network of the run's SUMO scenario, in simulator coordinates (Veins: y flipped,
+    plus a margin). Returns the MAPS key, or None if the network file cannot be found."""
+    m = re.search(r'xmldoc\("([^"]+)"\)', config.get("*.veinsManager.launchConfig", ""))
+    if not m:
+        return None
+    for root in repo_roots():
+        launch = os.path.join(root, "simulations", m.group(1))
+        if root and os.path.exists(launch):
+            break
+    else:
+        return None
+    text = open(launch).read()
+    base = re.search(r'<basedir path="([^"]+)"', text)
+    net = re.search(r'<copy file="([^"]+\.net\.xml)"', text)
+    if not base or not net:
+        return None
+    path = os.path.join(root, base.group(1), net.group(1))
+    if path in MAPS:
+        return path
+    if not os.path.exists(path):
+        return None
+    import xml.etree.ElementTree as ET
+    margin = float(re.sub(r"[^0-9.]", "", config.get("*.veinsManager.margin", "25")) or 25)
+    roads = []
+    bounds = None
+    for ev, el in ET.iterparse(path, events=("end",)):
+        if el.tag == "location":
+            bx1, by1, bx2, by2 = (float(v) for v in el.get("convBoundary").split(","))
+            bounds = (bx1, by1, bx2, by2)
+        elif el.tag == "edge":
+            if el.get("function") != "internal":
+                lane = el.find("lane")
+                if lane is not None and lane.get("shape"):
+                    roads.append([tuple(float(v) for v in p.split(",")[:2]) for p in lane.get("shape").split()])
+            el.clear()
+    if not bounds:
+        return None
+    bx1, by1, bx2, by2 = bounds
+    tol = max(bx2 - bx1, by2 - by1) / 2000  # ~0.05% of the map: invisible at screen size
+    out = []
+    for road in roads:
+        pts = simplify([(x - bx1 + margin, (by2 - by1) - (y - by1) + margin) for x, y in road], tol)
+        out.append([round(c, 1) for p in pts for c in p])
+    MAPS[path] = {"name": os.path.basename(path), "roads": out,
+                  "width": bx2 - bx1 + 2 * margin, "height": by2 - by1 + 2 * margin}
+    return path
+
+
+def infra_points(config, scalars):
+    """Every RSU / AP / cell tower with a known position (recorded at run end, else the ini)"""
+    pts = {}
+    for key, v in config.items():
+        m = re.match(r"^\*+\.(\w+)\[(\d+)\]\.mobility\.initial([XY])$", key)
+        if m:
+            pts.setdefault(f"{m.group(1)}[{m.group(2)}]", {})[m.group(3).lower()] = float(re.sub(r"[^0-9.\-]", "", v))
+    for mod, name, v in scalars:
+        m = re.match(r"infra\.(.+)\.([xy])$", name)
+        if m and RE_STATS.search(mod) and v is not None:
+            pts.setdefault(m.group(1), {})[m.group(2)] = v
+    kinds = (("dsrcRsu", "DSRC"), ("wifiAp", "WiFi"), ("gNodeB", "NR"), ("eNodeB", "LTE"))
+    out = []
+    for name, p in sorted(pts.items()):
+        rat = next((r for k, r in kinds if name.startswith(k)), None)
+        if rat and "x" in p and "y" in p:
+            out.append({"name": name, "rat": rat, "x": round(p["x"], 1), "y": round(p["y"], 1)})
+    return out
+
+
 def cellular_merged(config):
     """lteInterface == nrInterface: the manager cannot tell LTE from NR; report them as one 'Cellular'"""
     get = lambda k: next((v for key, v in config.items() if key.endswith("multiRatAppManager." + k)), None)
@@ -454,6 +548,8 @@ def load_run(run_dir):
             "cellular_merged": merged,
             "summary": summarize(config, scalars, stats, sim_time),
             "setup": scenario_setup(config, pars, scalars, descr),
+            "map": road_map(config),
+            "infra": infra_points(config, scalars),
             "series": series,
         })
         run["status"] = "ok"
@@ -486,7 +582,11 @@ def main(argv):
             if run["status"] != "no results" or run["meta"] or run["log"]:
                 runs.append(run)
     runs.sort(key=lambda r: r["started"] or "", reverse=True)
-    data = json.dumps({"generated": datetime.now(timezone.utc).isoformat(timespec="seconds"), "runs": runs},
+    for r in runs:  # maps live once in MAPS; a cached run may need its map loaded again
+        if r.get("map") and r["map"] not in MAPS:
+            r["map"] = road_map({"*.veinsManager.launchConfig": r["setup"]["launch"]}) if r.get("setup") else None
+    data = json.dumps({"generated": datetime.now(timezone.utc).isoformat(timespec="seconds"), "runs": runs,
+                       "maps": {k: v for k, v in MAPS.items() if any(r.get("map") == k for r in runs)}},
                       separators=(",", ":")).replace("</", "<\\/")
     page = TEMPLATE.replace("/*DATA*/", data).replace("{{ROOT}}", html.escape(os.path.abspath(root)))
     with open(out, "w") as f:
@@ -780,7 +880,7 @@ function renderRun(r) {
   if (r.series) {
     const S = r.series, t = S.t;
     root.append(el("h2", { text: "Over time" }));
-    root.append(el("p", { class: "sub", text: `Bins of ${S.bin_s} s.` }));
+    root.append(el("p", { class: "sub", text: `Each point covers ${fmt(S.bin_s, 1)} s of simulated time.` }));
     const g = el("div", { class: "grid2" });
     g.append(chart({ title: "Vehicles on each RAT", unit: "", t, digits: 0,
                      series: Object.entries(S.rat).map(([k, v]) => ({ name: k, color: RAT_COLOR[k] || "--s5", values: v })) }));
@@ -790,7 +890,7 @@ function renderRun(r) {
     const dl = Array.isArray(S.delay_ms) ? { Delay: S.delay_ms } : S.delay_ms;
     g.append(chart({ title: "Mean end-to-end delay, ms", unit: "ms", t, digits: 1,
                      series: Object.entries(dl).map(([k, v], i) => ({ name: k, color: `--s${i + 1}`, values: v })) }));
-    g.append(chart({ title: "Handovers per bin", unit: "", t, digits: 0, bars: true,
+    g.append(chart({ title: S.bin_s === 1 ? "RAT switches per second (all cars)" : `RAT switches per ${fmt(S.bin_s, 1)} s (all cars)`, unit: "", t, digits: 0, bars: true,
                      series: [{ name: "Handovers", color: "--s1", values: S.handovers }], empty: "No handovers in this run" }));
     root.append(g);
   }
@@ -826,6 +926,69 @@ function kvList(pairs) {
   return dl;
 }
 
+const INFRA_LABEL = { DSRC: "DSRC roadside unit", WiFi: "Wi-Fi access point", NR: "5G cell tower", LTE: "LTE cell tower" };
+const INFRA_SHORT = { DSRC: "RSU", WiFi: "AP", NR: "5G", LTE: "LTE" };
+
+// Road network with the RSUs, APs and cell towers on it. No axes or coordinates: a scale bar
+// gives distances.
+function renderMap(r) {
+  const m = r.map && DATA.maps && DATA.maps[r.map];
+  const infra = r.infra || [];
+  if (!m && !infra.length) return null;
+  const roads = m ? m.roads : [];
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  const grow = (x, y) => { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); };
+  for (const road of roads) for (let i = 0; i < road.length; i += 2) grow(road[i], road[i + 1]);
+  for (const p of infra) grow(p.x, p.y);
+  const span = Math.max(x1 - x0, y1 - y0, 1), pad = span * 0.06;
+  x0 -= pad; y0 -= pad; x1 += pad; y1 += pad;
+  const w = x1 - x0, h = Math.max(y1 - y0, w * 0.12);
+  const W = Math.max(300, (document.getElementById("run").clientWidth || 900) - 34), H = Math.max(140, Math.min(560, W * h / w));
+  const k = Math.min(W / w, H / h), ox = (W - w * k) / 2, oy = (H - h * k) / 2;
+  const X = x => ox + (x - x0) * k, Y = y => oy + (y - y0) * k;
+
+  const card = el("div", { class: "card", style: "margin-top:12px" }, el("h3", { text: "Map" }));
+  const lg = el("div", { class: "legend" }, el("span", {}, el("span", { class: "key", style: "background:var(--text-muted)" }), "road"));
+  for (const rat of ["DSRC", "WiFi", "NR", "LTE"])
+    if (infra.some(p => p.rat === rat))
+      lg.append(el("span", {}, el("span", { class: "key box", style: `background:var(${RAT_COLOR[rat]});border-radius:50%` }), INFRA_LABEL[rat]));
+  card.append(lg);
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Map of roads and radio infrastructure" });
+  svg.style.height = "auto";
+  const thin = roads.length > 500;
+  const rg = svgEl("g", { fill: "none", stroke: "var(--text-muted)", "stroke-width": thin ? 0.8 : 3, "stroke-linecap": "round", "stroke-linejoin": "round", opacity: thin ? 0.6 : 0.8 });
+  for (const road of roads) {
+    let d = "";
+    for (let i = 0; i < road.length; i += 2) d += (i ? "L" : "M") + X(road[i]).toFixed(1) + "," + Y(road[i + 1]).toFixed(1);
+    rg.append(svgEl("path", { d }));
+  }
+  svg.append(rg);
+  const count = {};
+  for (const p of infra) {
+    count[p.rat] = (count[p.rat] || 0) + 1;
+    const g = svgEl("g");
+    const c = svgEl("circle", { cx: X(p.x), cy: Y(p.y), r: 8, fill: `var(${RAT_COLOR[p.rat]})`, stroke: "var(--surface-1)", "stroke-width": 2 });
+    const t = svgEl("title"); t.textContent = `${INFRA_LABEL[p.rat]} ${count[p.rat]} (${p.name})`;
+    c.append(t);
+    const label = svgEl("text", { x: X(p.x), y: Y(p.y) - 13, "text-anchor": "middle", "font-size": 11, fill: "var(--text-secondary)" });
+    label.textContent = `${INFRA_SHORT[p.rat]} ${count[p.rat]}`;
+    g.append(c, label);
+    svg.append(g);
+  }
+  // scale bar
+  const target = w / 5, nice = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000].reduce((a, b) => Math.abs(b - target) < Math.abs(a - target) ? b : a);
+  const sx = 12, sy = H - 12, len = nice * k;
+  svg.append(svgEl("line", { x1: sx, x2: sx + len, y1: sy, y2: sy, stroke: "var(--text-secondary)", "stroke-width": 2 }));
+  for (const x of [sx, sx + len]) svg.append(svgEl("line", { x1: x, x2: x, y1: sy - 4, y2: sy + 1, stroke: "var(--text-secondary)", "stroke-width": 2 }));
+  const st = svgEl("text", { x: sx + len / 2, y: sy - 6, "text-anchor": "middle", "font-size": 11, fill: "var(--text-secondary)" });
+  st.textContent = nice >= 1000 ? `${nice / 1000} km` : `${nice} m`;
+  svg.append(st);
+  card.append(svg);
+  card.append(el("p", { class: "note", text: m ? `Roads from ${m.name}. Hover a marker for its module name.`
+                                               : "Road network file not found next to this report; only the infrastructure is shown." }));
+  return card;
+}
+
 function renderSetup(r) {
   const u = r.setup, m = r.meta || {}, out = [el("h2", { text: "Scenario and setup" })];
   const veh = r.summary ? r.summary.vehicles : null;
@@ -839,17 +1002,21 @@ function renderSetup(r) {
   out.push(top);
 
   const measured = (u.signal_model.signalSource || "proxy") === "measured";
+  const map = renderMap(r);
+  if (map) out.push(map);
   const infra = el("div", { class: "card", style: "margin-top:12px" }, el("h3", { text: "Radios and infrastructure" }));
   const cell = x => x.rat === "NR" || x.rat === "LTE";
-  infra.append(simpleTable(["RAT", "Towers", "Where", measured ? "Range (unused)" : "Range", "In range needs", "Assumed latency", "Assumed capacity", "Interface"],
-    u.rats.map(x => [x.rat,
-                     x.infra_type === "" ? (measured ? "none" : "none (treated as everywhere)") : (x.towers === 0 && measured ? "0 (never in range)" : x.towers),
-                     x.positions.length ? x.positions.join(" ") : (x.infra_type === "" || x.towers === 0 ? "–" : "not recorded"),
-                     x.range,
-                     measured ? (cell(x) ? `measured SINR ≥ ${x.min_sinr}` : `beacon ≥ ${x.rssi_threshold}`) : `estimate ≥ ${x.rssi_threshold}`,
-                     x.latency_ms != null ? x.latency_ms + " ms" : null,
-                     x.capacity_mbps != null ? x.capacity_mbps + " Mbit/s" : null, x.interface])));
-  infra.append(el("p", { class: "note", text: "Latency and capacity are fixed numbers the policies are told, not measured." }));
+  if (measured) {
+    infra.append(simpleTable(["RAT", "Towers", "Counts as usable when", "Interface"],
+      u.rats.map(x => [x.rat, x.infra_type === "" ? "none" : (x.towers === 0 ? "0 (never usable)" : x.towers),
+                       `uplink SINR at least ${x.min_sinr}` + (cell(x) ? "" : ", and associated"), x.interface])));
+    infra.append(el("p", { class: "note", text: "Signal, load, capacity and latency are all measured during the run; see \"What the policies saw\" under the results." }));
+  } else {
+    infra.append(simpleTable(["RAT", "Towers", "Range", "In range needs", "Assumed latency", "Assumed capacity", "Interface"],
+      u.rats.map(x => [x.rat, x.infra_type === "" ? "none (treated as everywhere)" : x.towers, x.range, `estimate ≥ ${x.rssi_threshold}`,
+                       x.latency_ms != null ? x.latency_ms + " ms" : null, x.capacity_mbps != null ? x.capacity_mbps + " Mbit/s" : null, x.interface])));
+    infra.append(el("p", { class: "note", text: "Latency and capacity are fixed numbers the policies are told, not measured." }));
+  }
   out.push(infra);
 
   const g = el("div", { class: "grid2", style: "margin-top:12px" });
@@ -865,8 +1032,10 @@ function renderSetup(r) {
   g.append(right);
   right2.append(el("h3", { text: measured ? "Signal given to policies: measured" : "Signal given to policies: distance estimate" }));
   right2.append(kvList(measured ? [
-      ["DSRC / WiFi", "received power and SNIR of beacons from RSUs / APs (other cars' frames ignored)"],
-      ["NR / LTE", "downlink SINR of the serving cell, measured by Simu5G"],
+      ["Signal", "uplink SINR: beacons from the car's own RSU/AP, or the 5G cell's SINR, minus the power gap between tower and car"],
+      ["Load", "Wi-Fi/DSRC: share of time the channel is busy; 5G: share of the cell's uplink resources in use"],
+      ["Capacity", "link rate times the free share"],
+      ["Latency", "access time plus packet send time, stretched by load"],
       ["Refreshed every", sm.updateInterval], ["Counts as lost after", sm.measurementMaxAge + " without a measurement"]]
     : [["Model", `distance to nearest tower: ${sm.txPowerDbm} dBm − ${sm.referenceLossDb} dB − 10·${sm.pathLossExponent}·log10(d)`],
        ["Refreshed every", sm.updateInterval], ["In range needs", [sm.useDistance === "true" ? "within range" : null, sm.useSignal === "true" ? "above min RSSI" : null].filter(Boolean).join(" and ")],
