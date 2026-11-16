@@ -6,6 +6,8 @@
 #include "MultiRatAppManager.h"
 #include "RatCoverageMonitor.h"
 
+#include "inet/mobility/contract/IMobility.h"
+
 namespace multiratvanet {
 
 using namespace omnetpp;
@@ -107,6 +109,21 @@ void RatStatsCollector::handleMessage(cMessage *msg)
 
 void RatStatsCollector::finish()
 {
+    // Where the infrastructure stood (once per run; positions in NED display strings are not
+    // in the results otherwise): "infra.<module>.x/.y" for every top-level node that has a
+    // mobility module and is not a vehicle.
+    for (cModule::SubmoduleIterator it(getSimulation()->getSystemModule()); !it.end(); ++it) {
+        cModule *node = *it;
+        if (node->getSubmodule("multiRatAppManager"))
+            continue;
+        auto *mob = dynamic_cast<inet::IMobility *>(node->getSubmodule("mobility"));
+        if (!mob)
+            continue;
+        inet::Coord p = mob->getCurrentPosition();
+        std::string base = std::string("infra.") + node->getFullName();
+        recordScalar((base + ".x").c_str(), p.x, "m");
+        recordScalar((base + ".y").c_str(), p.y, "m");
+    }
     cancelAndDelete(timer_);
     timer_ = nullptr;
 }

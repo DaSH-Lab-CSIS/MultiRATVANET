@@ -1,0 +1,212 @@
+# DRAFT adapter manifest — schema "dash-adapter/0". Provisional until a second, different tool is onboarded.
+# The dashboard reads this file; it must not contain MultiRATVANET-specific code.
+# Image tag + exact repo commit come from the image labels (dash.repo.commit / dash.repo.dirty), not from here.
+schema: dash-adapter/0
+tool:
+  name: MultiRATVANET
+  description: Multi-RAT VANET handover framework (OMNeT++/Veins/INET/Simu5G/SUMO)
+
+# ---------------------------------------------------------------------------------------------
+# How to run ONE job. Placeholders are filled by the runner from the job request.
+#   {omnetpp_config}  config name from the selected run (or the scenario base_config when composed)
+#   {sim_time}        duration; defaults to the scenario's default_sim_time (tools/run.sh itself defaults to
+#                     100s and would override every config's own limit, so it is ALWAYS passed)
+#   {param_args}      expands to zero or more argv entries, one "--<ini_key>=<value>" per parameter that
+#                     the job sets (parameters not set are omitted, so the config's own value applies)
+# argv is passed without a shell. tools/run.sh forwards unknown --key=value args to the simulation.
+# ---------------------------------------------------------------------------------------------
+run:
+  command: ["./tools/run.sh", "{omnetpp_config}", "--sim-time-limit={sim_time}", "{param_args}"]
+  working_dir: /workspace
+  env:
+    RESULTS_ROOT: /results/{job_id}      # runner sets this per job
+  value_format:                          # how a typed value is rendered after "--<ini_key>="
+    int: "{v}"
+    double: "{v}"
+    bool: "{v}"                          # true | false
+    duration: "{v}"                      # number + unit, e.g. 0.3s
+    distance: "{v}"                      # number + unit, e.g. 300m
+    string: "\"{v}\""                    # NED string literal: the quotes are part of the argv entry
+  seed:
+    # OMNeT++ seed set; tools/run.sh passes -r 0 so repetitions are selected with --seed-set.
+    # Verified 2026-11-01: --seed-set=1 shows up as "attr seedset 1" in the .sca.
+    ini_key: seed-set
+    status: verified
+
+outputs:
+  # raw files are always kept and downloadable
+  - {kind: omnetpp-scalar, glob: "**/*.sca"}
+  - {kind: omnetpp-vector, glob: "**/*.vec"}
+  - {kind: omnetpp-index,  glob: "**/*.vci"}
+  - {kind: ini-snapshot,   glob: "**/run-settings.ini"}
+# Standard metrics are defined in the `metrics` section below; each scenario names a metrics_profile.
+
+# ---------------------------------------------------------------------------------------------
+# Scenarios (data, not code). base_config is the omnetpp.ini config that defines the scenario with no
+# algorithm chosen (its policy is the NED default, CoveragePriority). default_* values are the
+# ini values, shown to the user; they are NOT sent unless the user changes them.
+# ---------------------------------------------------------------------------------------------
+scenarios:
+  - id: highway
+    description: 2 km straight road, 50 vehicles (DSRC/WiFi/NR/LTE)
+    base_config: MultiRatHighway_Base
+    default_sim_time: 300s
+    default_values: {decision_interval: 0.5s}
+    metrics_profile: handover
+    sumo: simulations/scenarios/highway
+  - id: highway_dsrc_lte
+    description: Highway V2I heterogeneous handover, DSRC near RSUs and LTE in the gaps (WiFi and NR off)
+    base_config: DsrcLteHandover
+    default_sim_time: 300s
+    default_values: {decision_interval: 0.25s, dsrc_handover_delay: 100ms, lte_handover_delay: 40ms}
+    metrics_profile: handover
+    sumo: simulations/scenarios/highway
+  - id: highway_v2v
+    description: Highway V2V safety beaconing over ad-hoc DSRC (802.11p/OCB). RAT selection is not the subject.
+    base_config: V2V
+    default_sim_time: 300s
+    default_values: {}
+    metrics_profile: v2v
+    algorithm_relevant: false
+    sumo: simulations/scenarios/highway
+  - id: highway_cv2x
+    description: Highway C-V2X safety broadcast over 5G-NR PC5 sidelink (D2D multicast). RAT selection is not the subject.
+    base_config: CV2X
+    default_sim_time: 300s
+    default_values: {}
+    metrics_profile: cv2x
+    algorithm_relevant: false
+    sumo: simulations/scenarios/highway
+  - id: urbangrid
+    description: Synthetic 5x5-block urban grid, 40 vehicles, 10 WiFi APs, 10 DSRC RSUs, one gNodeB
+    base_config: UrbanGrid_Base
+    default_sim_time: 120s
+    default_values: {decision_interval: 0.3s}
+    metrics_profile: handover
+    sumo: simulations/scenarios/urbangrid
+  - id: electroniccity
+    description: Electronic City, Bangalore (real OSM), 50 vehicles, 15 APs/RSUs, 3 gNodeBs
+    base_config: ElectronicCity_Base
+    default_sim_time: 1000s
+    default_values: {decision_interval: 0.5s}
+    metrics_profile: handover
+    sumo: simulations/scenarios/electroniccity
+
+# ---------------------------------------------------------------------------------------------
+# Algorithms. overrides are applied on top of a scenario's base_config when a (scenario, algorithm)
+# pair has no explicit entry in `runs` (composition; EXPERIMENTAL, validated for one pair first).
+# ---------------------------------------------------------------------------------------------
+algorithms:
+  - {id: coverage_priority, description: "Coverage priority (DSRC>WiFi>NR>LTE)", overrides: {"*.car[*].multiRatAppManager.policy": {type: string, value: CoveragePriority}}}
+  - {id: sinr,              description: "Pick the in-range RAT with the best signal quality", overrides: {"*.car[*].multiRatAppManager.policy": {type: string, value: Sinr}}}
+  - {id: latency_qos,       description: "Meet the latency budget with the most capacity",      overrides: {"*.car[*].multiRatAppManager.policy": {type: string, value: LatencyQos}}}
+  - {id: load,              description: "Balance load across in-range RATs",                    overrides: {"*.car[*].multiRatAppManager.policy": {type: string, value: Load}}}
+  - {id: ensemble,          description: "Weighted vote of all base policies",                   overrides: {"*.car[*].multiRatAppManager.policy": {type: string, value: Ensemble}}}
+  - {id: ml,                description: "Learned / federated controller hook",                 overrides: {"*.car[*].multiRatAppManager.policy": {type: string, value: Ml}}}
+
+# ---------------------------------------------------------------------------------------------
+# Explicit runs: (scenario, algorithm) -> omnetpp config. These are presets: they carry scenario-specific
+# algorithm tuning that lives in omnetpp.ini (e.g. Ml decisionInterval 0.3s highway / 0.2s urban;
+# Ensemble weights differ per scenario). Config names in omnetpp.ini are inconsistent, hence explicit.
+# ---------------------------------------------------------------------------------------------
+runs:
+  - {scenario: highway,          algorithm: coverage_priority, omnetpp_config: CoveragePriority}
+  - {scenario: highway,          algorithm: sinr,              omnetpp_config: Sinr}
+  - {scenario: highway,          algorithm: latency_qos,       omnetpp_config: LatencyQos}
+  - {scenario: highway,          algorithm: load,              omnetpp_config: Load}
+  - {scenario: highway,          algorithm: ml,                omnetpp_config: Ml}
+  - {scenario: highway,          algorithm: ensemble,          omnetpp_config: Ensemble}
+  - {scenario: highway_dsrc_lte, algorithm: coverage_priority, omnetpp_config: DsrcLteHandover}
+  - {scenario: highway_v2v,      algorithm: coverage_priority, omnetpp_config: V2V}
+  - {scenario: highway_cv2x,     algorithm: coverage_priority, omnetpp_config: CV2X}
+  - {scenario: urbangrid,        algorithm: coverage_priority, omnetpp_config: UrbanGrid_CoveragePriority}
+  - {scenario: urbangrid,        algorithm: ensemble,          omnetpp_config: UrbanGrid_Ensemble}
+  - {scenario: urbangrid,        algorithm: ml,                omnetpp_config: UrbanGrid_ML}
+  - {scenario: electroniccity,   algorithm: coverage_priority, omnetpp_config: ElectronicCity_CoveragePriority}
+  - {scenario: electroniccity,   algorithm: ensemble,          omnetpp_config: ElectronicCity_Ensemble}
+  - {scenario: electroniccity,   algorithm: ml,                omnetpp_config: ElectronicCity_ML}
+# Not registered as runs, by design:
+#   Dense, UrbanGrid_Dense, ElectronicCity_Dense -> their numCars override is a no-op (see the note under parameters); only the
+#                                                   ensemble_stickiness bump in UrbanGrid_Dense has an effect, via that parameter
+#   EnsembleSweep                                -> dashboard sweep over ensemble_weight_sinr x ensemble_weight_latency
+#                                                   with ensemble_stickiness=0 on the ensemble algorithm
+
+# ---------------------------------------------------------------------------------------------
+# Parameters: typed tunables mapped to OMNeT++ ini keys, sent as --<ini_key>=<value> only when set.
+# NOTE: there is deliberately no num_cars. `*.*.numCars` is not declared in any NED file and has no effect: the
+# vehicle count comes from the SUMO route file (highway: 10 eastbound + 7 westbound = 17). Traffic density needs a
+# parameter kind that generates a file (route flow period), which the contract does not have yet.
+# scope: scenario | algorithm.  sweepable: usable as a sweep axis.  applies_to: ids it is valid for.
+# ---------------------------------------------------------------------------------------------
+parameters:
+  - {id: decision_interval,    scope: scenario,  type: duration, ini_key: "*.car[*].multiRatAppManager.decisionInterval",              sweepable: true, applies_to: all, description: RAT re-evaluation interval}
+  - {id: dsrc_range,           scope: scenario,  type: distance, ini_key: "*.car[*].ratCoverageMonitor.dsrcRange",                     sweepable: true, applies_to: all}
+  - {id: wifi_range,           scope: scenario,  type: distance, ini_key: "*.car[*].ratCoverageMonitor.wifiRange",                     sweepable: true, applies_to: [highway, urbangrid, electroniccity]}
+  - {id: nr_range,             scope: scenario,  type: distance, ini_key: "*.car[*].ratCoverageMonitor.nrRange",                       sweepable: true, applies_to: [highway, electroniccity]}
+  - {id: lte_range,            scope: scenario,  type: distance, ini_key: "*.car[*].ratCoverageMonitor.lteRange",                      sweepable: true, applies_to: [urbangrid, electroniccity]}
+  - {id: lte_interface,        scope: scenario,  type: string,   ini_key: "*.car[*].multiRatAppManager.lteInterface",             applies_to: all, description: "Name of the LTE network interface the manager routes through. Simu5G 1.7 names it \"cellular\" (the ini default since the fix; it used to be \"wlan\", which made every cellular handover fail)"}
+  - {id: nr_interface,         scope: scenario,  type: string,   ini_key: "*.car[*].multiRatAppManager.nrInterface",              applies_to: all, description: "Name of the NR network interface; \"cellular\" (see lte_interface)"}
+  - {id: dsrc_handover_delay,  scope: scenario,  type: duration, ini_key: "*.car[*].multiRatAppManager.dsrcHandoverDelay",             sweepable: true, applies_to: [highway_dsrc_lte]}
+  - {id: lte_handover_delay,   scope: scenario,  type: duration, ini_key: "*.car[*].multiRatAppManager.lteHandoverDelay",              sweepable: true, applies_to: [highway_dsrc_lte]}
+  - {id: ensemble_weight_coverage, scope: algorithm, type: double, min: 0, ini_key: "*.car[*].multiRatAppManager.ensembleWeightCoverage", sweepable: true, applies_to: [ensemble], description: Voter weight, 0 disables}
+  - {id: ensemble_weight_sinr,     scope: algorithm, type: double, min: 0, ini_key: "*.car[*].multiRatAppManager.ensembleWeightSinr",     sweepable: true, applies_to: [ensemble]}
+  - {id: ensemble_weight_latency,  scope: algorithm, type: double, min: 0, ini_key: "*.car[*].multiRatAppManager.ensembleWeightLatency",  sweepable: true, applies_to: [ensemble]}
+  - {id: ensemble_weight_load,     scope: algorithm, type: double, min: 0, ini_key: "*.car[*].multiRatAppManager.ensembleWeightLoad",     sweepable: true, applies_to: [ensemble]}
+  - {id: ensemble_stickiness,      scope: algorithm, type: double, min: 0, ini_key: "*.car[*].multiRatAppManager.ensembleStickiness",     sweepable: true, applies_to: [ensemble]}
+# Verified end to end: --*.car[*].multiRatAppManager.policy="Sinr" overrides the ini (repo commit 224418d); the override mechanism is also confirmed with a (no-op) numCars.
+# Other keys and the seed option are not yet exercised.
+
+# ---------------------------------------------------------------------------------------------
+# Metrics: how this tool's raw results map to the dashboard's standard metrics (dash-metrics/0).
+# Aggregation is across entities (here: vehicles); NaN values are skipped and counted (n_missing).
+# `headline` is the aggregate shown by default in compare views; `better` says which direction is good.
+# Mapping from scalars written by multiRatAppManager and ratCoverageMonitor (verified on a real result file).
+# NOT YET MAPPED (not in these modules' scalars): end-to-end latency, packet loss, throughput (need app-level
+# statistics), and the v2v / cv2x profiles.
+# ---------------------------------------------------------------------------------------------
+metrics:
+  schema: dash-metrics/0
+  profiles:
+    handover:
+      reader: omnetpp-scalar
+      entity: {name: vehicle, module: '(.*\.car\[\d+\])\.'}
+      modules:
+        manager:  '\.car\[\d+\]\.multiRatAppManager$'
+        coverage: '\.car\[\d+\]\.ratCoverageMonitor$'
+        car_app:    '\.car\[\d+\]\.app\[0\]$'
+        server_app: '\.server\.app\[0\]$'
+      metrics:
+        - {id: handover_count,         label: Handovers,                     unit: count, module: manager,  scalar: handoversTotal,       aggregate: [mean, sum, max], headline: mean, better: lower}
+        - {id: ping_pong_count,        label: Ping-pong handovers,           unit: count, module: manager,  scalar: pingPongTotal,        aggregate: [mean, sum],      headline: mean, better: lower}
+        - {id: ping_pong_ratio,        label: Ping-pong ratio,               unit: ratio, module: manager,  scalar: pingPongRatio,        aggregate: [mean, max],      headline: mean, better: lower}
+        - {id: handover_failed_count,  label: Failed handovers,              unit: count, module: manager,  scalar: "handoverFailed:count", aggregate: [mean, sum],    headline: mean, better: lower}
+        - {id: decision_count,         label: Policy decisions,              unit: count, module: manager,  scalar: "decisionCount:count",  aggregate: [mean, sum],    headline: mean, better: none}
+        - {id: handover_delay_total_s, label: Total handover delay,          unit: s,     module: manager,  scalar: handoverDelayTotal,    aggregate: [sum, mean],      headline: sum,  better: lower}
+        - {id: handover_delay_max_s,   label: Worst handover delay,          unit: s,     module: manager,  scalar: handoverDelayMax,      aggregate: [max],            headline: max,  better: lower}
+        - {id: handover_delay_mean_s,  label: Mean handover delay (fleet),   unit: s,     ratio: {num: handover_delay_total_s, den: handover_count, using: sum}, better: lower}
+        - {id: selection_share_dsrc,   label: Time on DSRC,                  unit: ratio, module: manager,  scalar: DSRC.selectionShare,   aggregate: [mean], headline: mean, better: none, availability: in_range_dsrc}
+        - {id: selection_share_wifi,   label: Time on WiFi,                  unit: ratio, module: manager,  scalar: WIFI.selectionShare,   aggregate: [mean], headline: mean, better: none, availability: in_range_wifi}
+        - {id: selection_share_lte,    label: Time on LTE,                   unit: ratio, module: manager,  scalar: LTE.selectionShare,    aggregate: [mean], headline: mean, better: none, availability: in_range_lte}
+        - {id: selection_share_nr,     label: Time on NR,                    unit: ratio, module: manager,  scalar: NR.selectionShare,     aggregate: [mean], headline: mean, better: none, availability: in_range_nr}
+        - {id: selection_share_6g,     label: Time on 6G,                    unit: ratio, module: manager,  scalar: 6G.selectionShare,     aggregate: [mean], headline: mean, better: none}
+        - {id: in_range_dsrc,          label: DSRC in range (time share),    unit: ratio, module: coverage, scalar: "dsrcInRange:timeavg", aggregate: [mean], headline: mean, better: none}
+        - {id: in_range_wifi,          label: WiFi in range (time share),    unit: ratio, module: coverage, scalar: "wifiInRange:timeavg", aggregate: [mean], headline: mean, better: none}
+        - {id: in_range_lte,           label: LTE in range (time share),     unit: ratio, module: coverage, scalar: "lteInRange:timeavg",  aggregate: [mean], headline: mean, better: none}
+        - {id: in_range_nr,            label: NR in range (time share),      unit: ratio, module: coverage, scalar: "nrInRange:timeavg",   aggregate: [mean], headline: mean, better: none}
+        - {id: outage_ratio,           label: Outage ratio,                  unit: ratio, module: coverage, scalar: outageRatio,           aggregate: [mean, max],      headline: mean, better: lower}
+        - {id: outage_time_total_s,    label: Outage time,                   unit: s,     module: coverage, scalar: outageTimeTotal,       aggregate: [mean, sum],      headline: mean, better: lower}
+        - {id: outage_count,           label: Outages,                       unit: count, module: coverage, scalar: outageCount,           aggregate: [mean, sum],      headline: mean, better: lower}
+        - {id: max_outage_duration_s,  label: Longest outage,                unit: s,     module: coverage, scalar: maxOutageDuration,     aggregate: [max],            headline: max,  better: lower}
+        - {id: connectivity_ratio,     label: Connectivity ratio,            unit: ratio, module: coverage, scalar: connectivityRatio,     aggregate: [mean, min],      headline: mean, better: higher}
+        - {id: multi_connectivity_ratio, label: Multi-RAT connectivity,      unit: ratio, module: coverage, scalar: multiConnectivityRatio, aggregate: [mean],         headline: mean, better: higher}
+        - {id: avg_available_rats,     label: Available RATs (avg),         unit: count, module: coverage, scalar: avgAvailableRats,      aggregate: [mean], headline: mean, better: higher}
+        # ---- service quality, from the apps' own statistics (vehicle app[0] sends to server app[0])
+        - {id: packets_sent,           label: Packets sent (vehicles),       unit: count, module: car_app,    scalar: "packetSent:count",     aggregate: [sum, mean], headline: sum, better: none}
+        - {id: packets_received,       label: Packets received (server),     unit: count, module: server_app, scalar: "packetReceived:count", aggregate: [sum], headline: sum, better: none}
+        - {id: packet_delivery_ratio,  label: Delivery ratio,                unit: ratio, ratio: {num: packets_received, den: packets_sent, using: sum}, better: higher}
+        - {id: packet_loss_ratio,      label: Packet loss,                   unit: ratio, ratio: {num: packets_received, den: packets_sent, using: sum, complement: true}, better: lower}
+        - {id: throughput_mbps,        label: Throughput at server,          unit: Mbit/s, module: server_app, scalar: "packetReceived:sum(packetBytes)", scale: 8.0e-6, per_sim_second: true, aggregate: [sum], headline: sum, better: higher}
+        - {id: delay_sum_s,            label: End-to-end delay (total),      unit: s,     module: server_app, statistic: "endToEndDelay:histogram", field: sum,   aggregate: [sum], headline: sum, better: none, hidden: true}
+        - {id: delay_count,            label: End-to-end delay (samples),    unit: count, module: server_app, statistic: "endToEndDelay:histogram", field: count, aggregate: [sum], headline: sum, better: none, hidden: true}
+        - {id: delay_mean_s,           label: Mean end-to-end delay,         unit: s,     ratio: {num: delay_sum_s, den: delay_count, using: sum}, better: lower}
+        - {id: delay_max_s,            label: Worst end-to-end delay,        unit: s,     module: server_app, statistic: "endToEndDelay:histogram", field: max, aggregate: [max], headline: max, better: lower}

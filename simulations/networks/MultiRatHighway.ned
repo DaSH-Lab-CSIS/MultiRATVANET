@@ -9,8 +9,8 @@
 //
 package multiratvanet.simulations;
 
-import simu5g.simulations.NR.cars.Highway;
-import inet.physicallayer.ieee80211.packetlevel.Ieee80211ScalarRadioMedium;
+import simu5g.simulations.nr.cars.Highway;
+import inet.physicallayer.wireless.ieee80211.packetlevel.Ieee80211ScalarRadioMedium;
 import inet.node.ethernet.Eth10G;
 import multiratvanet.WifiAp;
 import multiratvanet.DsrcRsu;

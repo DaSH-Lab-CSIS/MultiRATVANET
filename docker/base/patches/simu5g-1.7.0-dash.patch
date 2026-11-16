@@ -1,0 +1,118 @@
+--- a/src/simu5g/corenetwork/bearerConfigurator/BearerConfigurator.cc
++++ b/src/simu5g/corenetwork/bearerConfigurator/BearerConfigurator.cc
+@@ -869,6 +869,7 @@
+     // entry catches the flows no filter matched.
+     MacNodeId ueId = getNodeTypeById(flow.sourceId) == UE ? flow.sourceId : flow.destId;
+     cModule *ueModule = binder_->getNodeModule(ueId);
++    ensureBearersAuthored(ueModule);  // DaSH patch
+     if (ueModule != nullptr) {
+         AuthoredBearer *defaultDef = nullptr;
+         for (auto& ab : authoredBearers_) {
+@@ -926,6 +927,37 @@
+     return establishDataConnection(flow, BearerRequest{ab.desc.rlcMode, ab.desc.lcg, key});
+ }
+ 
++// DaSH patch: see the declaration in BearerConfigurator.h. Authors the onDemandDrbs
++// definitions for one UE that registered after configureDrbs() ran. Only onDemandDrbs
++// are handled (staticDrbs are established up front and name their UE explicitly).
++// Limitation: an onDemandDrbs entry with a "ue" pattern that does not match this UE
++// makes parseDrbDefinitions() raise its usual "matches no registered UE" error.
++void BearerConfigurator::ensureBearersAuthored(cModule *ueModule)
++{
++    if (ueModule == nullptr || lateAuthoredUes_.count(ueModule))
++        return;
++    for (const AuthoredBearer& ab : authoredBearers_)
++        if (ab.ueModule == ueModule)
++            return;  // authored at initialization
++    lateAuthoredUes_.insert(ueModule);
++
++    std::map<cModule *, std::vector<MacNodeId>> ueNodeIds;
++    for (const auto& [nodeId, info] : binder_->getNodeInfoMap())
++        if (getNodeTypeById(nodeId) == UE && info.moduleRef == ueModule)
++            ueNodeIds[ueModule].push_back(nodeId);
++    if (ueNodeIds.empty())
++        return;
++
++    std::string networkPrefix = std::string(getSystemModule()->getFullPath()) + ".";
++    std::map<cModule *, std::map<DrbId, DrbDesc>> drbsOfUe;  // stays empty: no static bearers here
++    size_t first = authoredBearers_.size();
++    parseDrbDefinitions("onDemandDrbs", true, ueNodeIds, networkPrefix, drbsOfUe);
++    for (size_t i = first; i < authoredBearers_.size(); i++)
++        computeUseSdapHeader(authoredBearers_[i].desc);
++    EV << "BearerConfigurator::ensureBearersAuthored - authored " << (authoredBearers_.size() - first)
++       << " on-demand definition(s) for late UE " << ueModule->getFullPath() << endl;
++}
++
+ DrbId BearerConfigurator::resolveDrbForQfi(MacNodeId ueNodeId, Qfi qfi)
+ {
+     Enter_Method_Silent("resolveDrbForQfi");
+@@ -933,6 +965,7 @@
+     cModule *ueModule = binder_->getNodeModule(ueNodeId);
+     if (ueModule == nullptr)
+         return DRBID_NONE;
++    ensureBearersAuthored(ueModule);  // DaSH patch
+ 
+     // One walk, the shape establishOnDemandBearer() uses for packet filters: the
+     // definition that maps this QFI specifically wins immediately, in table order;
+--- a/src/simu5g/corenetwork/bearerConfigurator/BearerConfigurator.h
++++ b/src/simu5g/corenetwork/bearerConfigurator/BearerConfigurator.h
+@@ -71,6 +71,13 @@
+     };
+     std::vector<AuthoredBearer> authoredBearers_;
+ 
++    // DaSH patch: UEs created after network initialization (for example Veins/SUMO cars)
++    // have no entry in authoredBearers_, because configureDrbs() runs once, before they
++    // exist. ensureBearersAuthored() authors the onDemandDrbs definitions for such a UE
++    // the first time its bearers are looked up.
++    std::set<cModule *> lateAuthoredUes_;
++    virtual void ensureBearersAuthored(cModule *ueModule);
++
+     /*
+      * The flow that established each multicast bearer, kept so that a node joining the group
+      * later can still be given its RX leg (see multicastGroupJoined()). createConnection()
+--- a/src/simu5g/stack/rrc/HandoverController.cc
++++ b/src/simu5g/stack/rrc/HandoverController.cc
+@@ -95,6 +95,17 @@
+                 }
+                 servingNodeId_ = candidateServingNodeId_;
+                 servingNodeRssi_ = candidateServingNodeRssi_;
++
++                // DaSH patch: BearerManagement and the DL feedback generator both read the
++                // serving node at INITSTAGE_SIMU5G_BINDER_ACCESS, before this association ran,
++                // and keep NODEID_NONE. Without these calls the UE's HandoverPacketHolder
++                // deletes every uplink packet ("UE is not attached to any serving node"), and
++                // no CQI is ever reported, so every UL transmission is NACKed.
++                if (isNr_)
++                    bearerManagement_->setNrServingNodeId(servingNodeId_);
++                else
++                    bearerManagement_->setServingNodeId(servingNodeId_);
++                fbGen_->handleHandover(servingNodeId_);
+             }
+         }
+ 
+--- a/src/simu5g/stack/mac/LteMacEnb.cc
++++ b/src/simu5g/stack/mac/LteMacEnb.cc
+@@ -106,6 +106,23 @@
+ 
+     // remove pending RAC requests
+     enbSchedulerUl_->removePendingRac(nodeId);
++
++    // DaSH patch: also drop RACs from this UE still buffered for collision resolution.
++    // Otherwise a UE that sends a RAC and leaves the simulation (e.g. a Veins car reaching
++    // the end of its route) in the same TTI is signalled to the UL scheduler afterwards,
++    // and racschedule() throws std::out_of_range from LteAmc::existTxParams().
++    for (auto it = pendingRacRequests_.begin(); it != pendingRacRequests_.end(); ) {
++        auto& pkts = it->second;
++        for (auto p = pkts.begin(); p != pkts.end(); ) {
++            if ((*p)->getTag<UserControlInfo>()->getSourceId() == nodeId) {
++                delete *p;
++                p = pkts.erase(p);
++            }
++            else
++                ++p;
++        }
++        it = pkts.empty() ? pendingRacRequests_.erase(it) : std::next(it);
++    }
+ }
+ 
+ void LteMacEnb::initialize(int stage)

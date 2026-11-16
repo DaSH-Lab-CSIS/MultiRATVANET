@@ -66,3 +66,12 @@ plots/
 # Simulation outputs & runtime state
 simulations/results/
 .qtenvrc
+
+/results/
+/framework/framework
+/all_metrics_summary.csv
+*.bak
+
+# Toolchain tarball cache for offline image builds
+/docker/base/dl/*
+!/docker/base/dl/.gitkeep

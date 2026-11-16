@@ -4,18 +4,22 @@
 
 A vehicle carries multiple radio access technologies (DSRC, WiFi, LTE, 5G-NR) simultaneously, all terminating at a unified IPv4 stack. An application-layer RAT selector orchestrates handovers based on configurable policies, enabling research into multi-RAT vehicular network optimization.
 
-## Quick Start
+## Quick Start (Docker)
+
+Everything (toolchain and framework) is in one Docker image. You only need Docker and this repo.
 
 ```bash
-# Build
-./tools/build.sh
+# Build the image (first time: 1-2 h, it compiles the whole toolchain)
+dash/build-image.sh
 
-# Run a scenario
-./tools/run.sh Highway_CoveragePriority --sim-time-limit=70s
+# Run one config, results go to ./results
+dash/mrv run Sinr --sim-time-limit=120s
 
-# Analyze results
-python tools/analysis/plot-residency.py results/
+# Run an experiment with parameters, then open results/report.html
+dash/run-experiment.sh --scenario highway --policy ensemble --time 120s --ensemble-weight-sinr 2
 ```
+
+Use `DOCKER="sudo docker"` in front of any of these if your user is not in the `docker` group.
 
 ## Documentation
 
@@ -39,12 +43,15 @@ python tools/analysis/plot-residency.py results/
 
 ## Prerequisites
 
-- **OMNeT++ 5.6.1** (built)
-- **INET 4.2.2** (built)
-- **Veins 5.2** + veins_inet (built)
-- **Simu5G 1.1.0** (built)
-- **SUMO 1.24+** (on PATH)
-- **Python 3.8+** (for analysis tools)
+With Docker: Docker 20.10+ (Linux, or Docker Desktop on macOS/Windows). The image is x86_64; on an ARM Mac it runs under emulation, slower.
+
+Without Docker, build these yourself (versions must match):
+
+- **OMNeT++ 6.3.0**
+- **INET 4.6.0**, with `docker/base/patches/inet-4.6.0-dash.patch`
+- **Veins 5.3.1** + veins_inet
+- **Simu5G 1.7.0**, with `docker/base/patches/simu5g-1.7.0-dash.patch` (without it the cellular path delivers nothing)
+- **SUMO 1.22.0** (Veins 5.3.1 does not support newer TraCI versions)
 
 ## Repository Structure
 
@@ -76,19 +83,34 @@ results/                Experiment results & analysis
 
 ## Build & Run
 
+### With Docker
+
+| Command | What it does |
+|---|---|
+| `dash/build-image.sh` | Builds `vsim-base` (toolchain, from `docker/base/`) if missing, then `multiratvanet:<commit>` and `:latest`. The build fails if a 15 s cellular test run delivers nothing. `JOBS=4` limits compile jobs on small machines. |
+| `dash/mrv run <CONFIG> [--sim-time-limit=T] ['--<ini-key>=<value>' ...]` | Runs one config from `simulations/omnetpp.ini`. |
+| `dash/mrv shell` | Bash inside the image, toolchain on PATH. |
+| `dash/mrv versions` | Toolchain versions and repo commit baked into the image. |
+| `dash/run-experiment.sh --help` | Runs one experiment with every tunable as a flag (scenario, policy, time, seed, ranges, ensemble weights, `--set KEY=VALUE`), saves `run.json` and `console.log`, and rebuilds `results/report.html`. |
+
+`results/report.html` lists every run with its scenario and config, final results (delivery, throughput, delay, handovers), time series and console log. Open it in a browser; `report.html#<run-folder>` links to one run.
+
+To use the image on another machine without building it:
+
 ```bash
-# Compile framework
-cd framework
-opp_makemake -f --deep -O out -L [framework_paths]
-make -j4
+docker save multiratvanet:latest | gzip > multiratvanet.tar.gz   # on a machine that has it
+docker load < multiratvanet.tar.gz                              # on the new machine
+```
 
-# Run scenario
-cd ..
-./tools/run.sh UrbanGrid_Ensemble --sim-time-limit=120s
+If GitHub downloads fail during the build, put the release tarballs in `docker/base/dl/`; see `docker/base/README.md`.
 
-# Analyze results
-python tools/analysis/export-results.py results/
-python tools/analysis/plot-metrics.py results/
+### Without Docker
+
+`tools/build.sh` and `tools/run.sh` read `OMNETPP_BIN`, `INET_DIR`, `VEINS_DIR` and `SIMU5G_DIR` from the environment. Start `veins_launchd -c sumo -p 9999` from the repo root first.
+
+```bash
+./tools/build.sh
+./tools/run.sh Ensemble --sim-time-limit=120s
 ```
 
 ## Configuration
@@ -96,12 +118,13 @@ python tools/analysis/plot-metrics.py results/
 Each scenario has multiple configurations:
 
 ```
-Highway_CoveragePriority      Fixed priority (DSRC > WiFi > NR > LTE)
-Highway_Ensemble              Multi-objective voting
-Highway_ML                    ML agent hook
-UrbanGrid_*                   Similar variants
-ElectronicCity_*              Real-world scenario
+CoveragePriority, Sinr, LatencyQos, Load, Ml, Ensemble    Highway, one per policy
+DsrcLteHandover, V2V, CV2X                                Highway variants
+UrbanGrid_CoveragePriority, UrbanGrid_Ensemble, UrbanGrid_ML
+ElectronicCity_CoveragePriority, ElectronicCity_Ensemble, ElectronicCity_ML
 ```
+
+The number of vehicles comes from the SUMO route files; `numCars` in the ini has no effect.
 
 Modify `simulations/scenarios/*/config.ini` to adjust:
 - Vehicle density & routes

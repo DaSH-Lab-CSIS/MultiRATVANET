@@ -1,0 +1,16 @@
+--- a/src/inet/linklayer/ieee80211/mgmt/Ieee80211AgentSta.cc
++++ b/src/inet/linklayer/ieee80211/mgmt/Ieee80211AgentSta.cc
+@@ -113,7 +113,12 @@
+     printSignalBanner(signalID, obj, details);
+ 
+     if (signalID == l2BeaconLostSignal) {
+-        // TODO should check details if it's about this NIC
++        // DaSH patch: the agent subscribes at host level, so on a host with several 802.11 NICs
++        // (e.g. a vehicle with DSRC and WiFi) every NIC's beacon loss reached every agent. An agent
++        // whose own NIC was mid-scan then sent a second ScanRequest and Ieee80211MgmtSta aborted
++        // with "scanning already in progress". The signal carries the NIC that lost the beacon.
++        if (obj != myIface)
++            return;
+         EV << "beacon lost, starting scanning again\n";
+         getContainingNode(this)->bubble("Beacon lost!");
+ //        sendDisassociateRequest();
