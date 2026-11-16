@@ -10,9 +10,43 @@
 #ifndef MULTIRATVANET_IRATSELECTIONPOLICY_H
 #define MULTIRATVANET_IRATSELECTIONPOLICY_H
 
+#include <algorithm>
+
 #include "base/RatTypes.h"
 
 namespace multiratvanet {
+
+//
+// Time-to-trigger, as in LTE/NR handover: a policy's choice of a *different* usable RAT only
+// takes effect once the same choice has held for 'seconds'. Losing the current RAT switches at
+// once. Without it, cars react to every fade and, worse, all react together to the same load
+// change, so they move as a herd and keep swapping RATs.
+//
+class SwitchConfirmation {
+  public:
+    explicit SwitchConfirmation(double seconds = 1.0) : seconds_(seconds) {}
+    RatId apply(RatId current, RatId wanted, bool currentUsable, const RatMetricsVec &metrics) {
+        if (!currentUsable || wanted == RatId::NONE || wanted == current) {
+            candidate_ = RatId::NONE;
+            return currentUsable && wanted == RatId::NONE ? current : wanted;
+        }
+        double now = 0;
+        for (const auto &m : metrics)
+            now = std::max(now, m.lastUpdate);
+        if (candidate_ != wanted) {
+            candidate_ = wanted;
+            since_ = now;
+        }
+        if (now - since_ < seconds_)
+            return current;
+        candidate_ = RatId::NONE;
+        return wanted;
+    }
+  private:
+    double seconds_;
+    RatId candidate_ = RatId::NONE;
+    double since_ = 0;
+};
 
 class IRatSelectionPolicy {
   public:

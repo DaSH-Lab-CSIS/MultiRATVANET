@@ -6,6 +6,7 @@
 #include "MultiRatAppManager.h"
 #include "RatCoverageMonitor.h"
 
+#include <cmath>
 #include "inet/mobility/contract/IMobility.h"
 
 namespace multiratvanet {
@@ -62,7 +63,8 @@ void RatStatsCollector::collectCars(cModule *root,
                 if (auto *mon = dynamic_cast<RatCoverageMonitor *>(monMod)) {
                     const RatMetricsVec &metrics = mon->getMetrics();
                     for (int i = 0; i < (int)RatId::COUNT && i < (int)metrics.size(); ++i) {
-                        if (metrics[i].present && metrics[i].inRange) {
+                        // cellular reports SINR only (rssiDbm is NaN in measured mode)
+                        if (metrics[i].present && metrics[i].inRange && !std::isnan(metrics[i].rssiDbm)) {
                             rssiSum[i] += metrics[i].rssiDbm;
                             ++rssiCount[i];
                         }

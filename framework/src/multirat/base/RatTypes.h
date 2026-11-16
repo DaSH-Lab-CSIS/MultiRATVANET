@@ -50,6 +50,7 @@ struct RatMetrics {
     double estLatencyMs = 1e6; // estimated one-way/round latency proxy (ms)
     double load = 0.0;         // normalized channel/cell load [0..1]
     double capacityMbps = 0.0; // nominal/estimated available rate (Mbps)
+    double minSinrDb = -1e9;   // lowest usable SINR for this RAT (dB); sinrDb - minSinrDb = margin
     double lastUpdate = 0.0;   // sim time (s) of last refresh
 };
 
