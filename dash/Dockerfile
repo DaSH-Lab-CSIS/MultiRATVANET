@@ -4,8 +4,8 @@
 #     --build-arg REPO_COMMIT=$(git rev-parse HEAD) \
 #     --build-arg REPO_DIRTY=$(test -n "$(git status --porcelain --untracked-files=no)" && echo yes || echo no) \
 #     -t multiratvanet:$(git rev-parse --short HEAD) .
-# dash2 = INET + Simu5G with the DaSH fixes (docker/base/patches); cellular and multi-NIC 802.11 need them
-ARG BASE_IMAGE=vsim-base:om6.3.0-inet4.6.0-veins5.3.1-s5g1.7.0-dash2-sumo1.22.0
+# dash3 = INET + Simu5G with the DaSH fixes (docker/base/patches); cellular and multi-NIC 802.11 need them
+ARG BASE_IMAGE=vsim-base:om6.3.0-inet4.6.0-veins5.3.1-s5g1.7.0-dash3-sumo1.22.0
 FROM ${BASE_IMAGE}
 
 ARG REPO_COMMIT=unknown

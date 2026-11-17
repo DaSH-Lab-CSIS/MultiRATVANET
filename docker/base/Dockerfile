@@ -5,7 +5,7 @@
 # Mirrors the opp_env install proven on anjuna3 (Ubuntu 22.04.5), but without Nix.
 # Contains NO research repo. Derive with `FROM vsim-base:<tag>` or bind-mount a repo at /workspace.
 #
-# Build:  docker build -t vsim-base:om6.3.0-inet4.6.0-veins5.3.1-s5g1.7.0-dash2-sumo1.22.0 .
+# Build:  docker build -t vsim-base:om6.3.0-inet4.6.0-veins5.3.1-s5g1.7.0-dash3-sumo1.22.0 .
 
 ARG UBUNTU_VERSION=22.04
 # base pinned by digest (multi-arch index) for reproducibility; override with --build-arg UBUNTU_DIGEST=...
@@ -19,7 +19,7 @@ ARG VEINS_VERSION=5.3.1
 ARG SIMU5G_VERSION=1.7.0
 ARG SUMO_VERSION=1.22.0
 # Revision of the DaSH patches in patches/ (INET + Simu5G); bump it whenever a patch changes (it is part of the image tag)
-ARG VSIM_PATCHSET=dash2
+ARG VSIM_PATCHSET=dash3
 ARG BUILD_MODE=release
 # 0 = use all cores (INET needs ~1 GB RAM per job with clang; lower this on small Docker VMs)
 ARG JOBS=0

@@ -10,7 +10,7 @@
 set -euo pipefail
 
 DOCKER=${DOCKER:-docker}
-BASE=vsim-base:om6.3.0-inet4.6.0-veins5.3.1-s5g1.7.0-dash2-sumo1.22.0
+BASE=vsim-base:om6.3.0-inet4.6.0-veins5.3.1-s5g1.7.0-dash3-sumo1.22.0
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 BASE_DIR=$REPO/docker/base
 

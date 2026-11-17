@@ -2,7 +2,7 @@
 
 Pinned base image: OMNeT++ 6.3.0 · INET 4.6.0 · Veins 5.3.1 (+veins_inet) · Simu5G 1.7.0 · SUMO 1.22.0 on Ubuntu 22.04, with the fixes in `patches/`. No research repo inside. `dash/build-image.sh` builds it for you; by hand, from this folder:
 
-    docker build -t vsim-base:om6.3.0-inet4.6.0-veins5.3.1-s5g1.7.0-dash2-sumo1.22.0 .
+    docker build -t vsim-base:om6.3.0-inet4.6.0-veins5.3.1-s5g1.7.0-dash3-sumo1.22.0 .
     docker build --build-arg JOBS=4 --build-arg RUN_SMOKE=0 ...      # small Docker VM / skip build-time smoke test
 
 ## Contract (v1)
@@ -14,7 +14,7 @@ Pinned base image: OMNeT++ 6.3.0 · INET 4.6.0 · Veins 5.3.1 (+veins_inet) · S
 - Cmdenv only (no IDE, no Qtenv).
 
 ## Derive
-    FROM vsim-base:om6.3.0-inet4.6.0-veins5.3.1-s5g1.7.0-dash2-sumo1.22.0
+    FROM vsim-base:om6.3.0-inet4.6.0-veins5.3.1-s5g1.7.0-dash3-sumo1.22.0
     COPY --chown=vsim:vsim . /workspace
     RUN ./build.sh        # RUN uses bash with toolchain env via ENV PATH + BASH_ENV
 
@@ -41,12 +41,13 @@ The container user is uid 1000. To read/write a host folder owned by someone els
 - Contract anyway: run repos from /workspace, write outputs to /results. /workspace and /results are mode 1777 (like /tmp); with a bind mount, host permissions apply.
 
 ## Patches
-`patches/` is applied to the release tarballs before building. `dash2` in the tag is the patch revision (`VSIM_PATCHSET`); bump it when a patch changes. Each change is marked `DaSH patch` in the source.
+`patches/` is applied to the release tarballs before building. `dash3` in the tag is the patch revision (`VSIM_PATCHSET`); bump it when a patch changes. Each change is marked `DaSH patch` in the source.
 
 Simu5G 1.7.0 (`simu5g-1.7.0-dash.patch`). These hit every UE created after start-up, which is every Veins car:
 - `BearerConfigurator`: no data bearer for late UEs; the run aborts with `no DRB for QFI 0`.
 - `HandoverController`: after dynamic cell association, BearerManagement and the DL feedback generator still think the UE is detached. Uplink packets are dropped silently and no CQI is reported, so every uplink transmission fails.
 - `LteMacEnb::deleteQueues`: a RAC sent in a car's last TTI outlives the car and crashes the scheduler (`map::at`).
+- `LteMacUe::macPduMake`: a car outside every cell's range has uplink data (its probes) but no serving cell; creating its H-ARQ buffer casts a null MAC and stops the run (`check_and_cast(): Cannot cast nullptr to type 'simu5g::LteMacBase *'`). The PDU is dropped instead. Seen in ElectronicCity, where cars start out of coverage.
 
 INET 4.6.0 (`inet-4.6.0-dash.patch`):
 - `Ieee80211AgentSta`: on a host with two 802.11 cards (DSRC + WiFi), one card's beacon loss also triggered a scan on the other, which aborts with `scanning already in progress`.
