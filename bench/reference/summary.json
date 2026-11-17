@@ -1,7 +1,7 @@
 {
- "bench": "20261117T101058Z-standard",
+ "bench": "20261117T105944Z-standard",
  "commits": [
-  "502870fd64"
+  "d55ae08c33"
  ],
  "failed": [],
  "scenarios": {
@@ -472,7 +472,7 @@
   "standard": true,
   "extra": [],
   "image": "multiratvanet:latest",
-  "repo_commit": "502870fd64d866be3dc1831f93841b91446742a4",
-  "started": "2026-11-17T10:10:58Z"
+  "repo_commit": "d55ae08c331dbfa29bf7ee515487d4360127e2b6",
+  "started": "2026-11-17T10:59:44Z"
  }
 }

@@ -24,7 +24,7 @@ import xml.etree.ElementTree as ET
 from collections import Counter
 from datetime import datetime, timezone
 
-CACHE_VERSION = 11
+CACHE_VERSION = 12
 LOG_TAIL = 200
 BIN_STEPS = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500]
 MAX_POINTS = 120
@@ -279,6 +279,7 @@ def summarize(config, scalars, stats, sim_time):
         "handovers": total("handoversTotal"),
         "handovers_per_vehicle": total("handoversTotal") / n if n else None,
         "handovers_failed": total("handoverFailed:count"),
+        "ping_pong": total("pingPongTotal"),
         "connectivity": mean("connectivityRatio"),
         "outage_s": total("outageTimeTotal"),
         "interruption_count": interruption["count"],
