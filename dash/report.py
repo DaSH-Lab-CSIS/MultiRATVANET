@@ -1611,6 +1611,8 @@ const POLICY = {
                       top: "the first usable RAT in the order DSRC → Wi-Fi → 5G → LTE", better: null, key: "ok" },
   Sinr: { what: "Picks the RAT with the strongest signal. Signal is compared as dB above the lowest SINR each RAT can still use, since raw SINR means different things for Wi-Fi and 5G.",
           top: "the usable RAT whose signal is furthest above its minimum", better: d => `at least ${d.sinrSwitchMargin || "3dB"} more`, key: "sinr" },
+  ReliableSinr: { what: "Picks the RAT whose probes come back most often (halved if over the latency budget); near-ties go to the stronger signal. Leaves a RAT at once when it stops answering its probes, and does not go back to a RAT that just failed for 2 s.",
+          top: "the usable RAT with the most probes echoed; within 5 points, the one whose signal is furthest above its minimum", better: d => `15 points more echoed, or as reliable and ${d.sinrSwitchMargin || "3dB"} stronger`, key: "sinr" },
   LatencyQos: { what: "Picks the RAT with the highest link rate among those whose latency (half the round trip of the car's own probes) fits the budget.",
                 top: d => `the usable RAT with the highest link rate whose probe latency is within ${d.latencyBudget || "100ms"} (if none fit: the lowest latency)`,
                 better: () => "at least 25% more link rate", key: "rate" },
@@ -2011,9 +2013,9 @@ function renderHistory() {
 // ---------------------------------------------------------------------------------------------
 // Compare policies: runs of the same scenario, length, image and parameters, one row per policy,
 // averaged over seeds.
-const POLICY_ORDER = ["coverage_priority", "sinr", "latency_qos", "load", "ensemble", "ml", "example_split",
+const POLICY_ORDER = ["coverage_priority", "sinr", "reliable_sinr", "latency_qos", "load", "ensemble", "ml", "example_split",
                       "only_dsrc", "only_wifi", "only_nr"];
-const POLICY_LABEL = { coverage_priority: "CoveragePriority", sinr: "Sinr", latency_qos: "LatencyQos", load: "Load",
+const POLICY_LABEL = { coverage_priority: "CoveragePriority", sinr: "Sinr", reliable_sinr: "ReliableSinr", latency_qos: "LatencyQos", load: "Load",
   ensemble: "Ensemble", ml: "Ml", example_split: "ExampleSplit", only_dsrc: "only DSRC", only_wifi: "only WiFi", only_nr: "only 5G" };
 const isBaseline = p => p.startsWith("only_");
 const policyLabel = p => POLICY_LABEL[p] || p;

@@ -17,9 +17,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 import report  # noqa: E402  (dash/report.py reads the .sca files)
 
 # rows in this order; the baselines last
-POLICIES = ["coverage_priority", "sinr", "latency_qos", "load", "ensemble"]
+POLICIES = ["coverage_priority", "sinr", "reliable_sinr", "latency_qos", "load", "ensemble"]
 BASELINES = ["only_dsrc", "only_wifi", "only_nr"]
-LABELS = {"coverage_priority": "CoveragePriority", "sinr": "Sinr", "latency_qos": "LatencyQos",
+LABELS = {"coverage_priority": "CoveragePriority", "sinr": "Sinr", "reliable_sinr": "ReliableSinr", "latency_qos": "LatencyQos",
           "load": "Load", "ensemble": "Ensemble", "ml": "Ml", "example_split": "ExampleSplit",
           "only_dsrc": "only DSRC", "only_wifi": "only WiFi", "only_nr": "only 5G"}
 

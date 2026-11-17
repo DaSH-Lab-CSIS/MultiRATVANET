@@ -8,7 +8,7 @@
 #
 # Experiment
 #   --scenario S            highway (default) | highway_dsrc_nr | highway_v2v | highway_cv2x | urbangrid | electroniccity
-#   --policy P              coverage_priority (default) | sinr | latency_qos | load | ml | ensemble | example_split
+#   --policy P              coverage_priority (default) | sinr | reliable_sinr | latency_qos | load | ml | ensemble | example_split
 #                           baselines (one RAT only): only_dsrc | only_wifi | only_nr
 #   --config NAME           use this omnetpp.ini config directly (overrides --scenario/--policy mapping)
 #   --time T                simulated time, e.g. 120s (default: the scenario's default)
@@ -108,7 +108,7 @@ case $SCENARIO in
     *) die "unknown scenario $SCENARIO" ;;
 esac
 case $POLICY in
-    coverage_priority) pol=CoveragePriority ;; sinr) pol=Sinr ;; latency_qos) pol=LatencyQos ;;
+    coverage_priority) pol=CoveragePriority ;; sinr) pol=Sinr ;; reliable_sinr) pol=ReliableSinr ;; latency_qos) pol=LatencyQos ;;
     load) pol=Load ;; ml) pol=Ml ;; ensemble) pol=Ensemble ;; example_split) pol=ExampleSplit ;;
     only_dsrc) pol=OnlyDsrc ;; only_wifi) pol=OnlyWifi ;; only_nr) pol=OnlyNr ;;
     *) die "unknown policy $POLICY" ;;

@@ -4,6 +4,7 @@
 #include "policies/RatPolicyFactory.h"
 #include "policies/CoveragePriorityPolicy.h"
 #include "policies/SinrPolicy.h"
+#include "policies/ReliableSinrPolicy.h"
 #include "policies/LatencyQosPolicy.h"
 #include "policies/LoadPolicy.h"
 #include "policies/MlPolicy.h"
@@ -19,6 +20,8 @@ std::unique_ptr<IRatSelectionPolicy> RatPolicyFactory::create(const std::string 
         return Ptr(new CoveragePriorityPolicy(CoveragePriorityPolicy::defaultOrder(), p.timeToTrigger));
     if (name == "Sinr")
         return Ptr(new SinrPolicy(p.sinrMarginDb, p.timeToTrigger));
+    if (name == "ReliableSinr")
+        return Ptr(new ReliableSinrPolicy(p.sinrMarginDb, p.maxLatencyMs, p.timeToTrigger));
     if (name == "LatencyQos")
         return Ptr(new LatencyQosPolicy(p.maxLatencyMs, p.timeToTrigger));
     if (name == "Load")
