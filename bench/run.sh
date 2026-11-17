@@ -7,6 +7,7 @@
 #   bench/run.sh --against bench/reference        # ... and show the change against the committed reference
 #   bench/run.sh --against bench-results/<earlier bench>
 #   bench/run.sh --quick                          # 60 s, seed 0 only: a fast sanity check
+#   bench/run.sh --save-reference                 # standard bench, then make it the committed reference
 #   bench/run.sh --scenarios "highway urbangrid" --seeds "0 1 2 3 4"
 #   bench/run.sh --only "sinr only_nr" --set '*.car[*].app[2].probeInterval=200ms'
 #
@@ -23,8 +24,11 @@
 #   --image IMG           (default multiratvanet:latest; build it with dash/build-image.sh)
 #   --vectors             also record OMNeT++ vectors (time series in report.html; ~300 MB per 120 s
 #                         run, so ~7 GB for the standard bench). Off by default: the tables need scalars only.
+#   --save-reference      copy summary.md, summary.json and report.html into bench/reference/ (only for
+#                         a standard bench that completed every run); commit them with the change
 # Writes <out>/<UTC time>[-label]/: one run folder per (scenario, policy, seed), bench.json (the
-# settings), summary.md and summary.json (the tables), report.html (every run in detail).
+# settings), summary.md and summary.json (the tables), report.html (the dashboard: the policies
+# compared, then every run with its map, decisions and results). Open report.html first.
 # Environment: DOCKER (default "docker").
 set -euo pipefail
 
@@ -32,16 +36,17 @@ REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 POLICIES="coverage_priority sinr latency_qos load ensemble only_dsrc only_wifi only_nr"
 STD_SCENARIOS=highway STD_SEEDS="0 1 2" STD_TIME=120s
 SCENARIOS=$STD_SCENARIOS SEEDS=$STD_SEEDS SIM_TIME=$STD_TIME ONLY=$POLICIES
-VECTORS=0 JOBS=8 LABEL="" OUT=$PWD/bench-results AGAINST="" IMAGE=multiratvanet:latest
+VECTORS=0 SAVE_REF=0 JOBS=8 LABEL="" OUT=$PWD/bench-results AGAINST="" IMAGE=multiratvanet:latest
 SETS=()
 
-usage() { sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+usage() { sed -n '2,31p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 die() { echo "error: $*" >&2; exit 2; }
 
 while [ $# -gt 0 ]; do
     case $1 in
         --quick)     SIM_TIME=60s SEEDS=0; shift; continue ;;
         --vectors)   VECTORS=1; shift; continue ;;
+        --save-reference) SAVE_REF=1; shift; continue ;;
         -h|--help)   usage ;;
     esac
     [ $# -ge 2 ] || die "$1 needs a value"
@@ -116,6 +121,24 @@ xargs -P "$JOBS" -L 1 bash -c '
 echo "== summary"
 rc=0
 python3 "$REPO/bench/compare.py" "$BENCH" ${AGAINST:+--against "$AGAINST"} || rc=$?
-python3 "$REPO/dash/report.py" "$BENCH" >/dev/null && echo "== details: $BENCH/report.html"
+if python3 "$REPO/dash/report.py" "$BENCH" >/dev/null; then
+    echo "== report: $BENCH/report.html"
+else
+    echo "!! report.html could not be built (see above)"; rc=1
+fi
 echo "== tables: $BENCH/summary.md"
+if [ "$SAVE_REF" = 1 ]; then
+    # only a standard bench in which every run completed becomes the reference
+    if [ $rc = 0 ] && python3 - "$BENCH" <<'PY'
+import json, sys
+b, s = (json.load(open(f"{sys.argv[1]}/{f}")) for f in ("bench.json", "summary.json"))
+sys.exit(0 if b.get("standard") and not s.get("failed") else 1)
+PY
+    then
+        cp "$BENCH/summary.md" "$BENCH/summary.json" "$BENCH/report.html" "$REPO/bench/reference/"
+        echo "== saved as bench/reference/ (summary.md, summary.json, report.html): commit them with the change"
+    else
+        echo "!! not saved as the reference: only a standard bench with every run completed is"; rc=1
+    fi
+fi
 exit $rc

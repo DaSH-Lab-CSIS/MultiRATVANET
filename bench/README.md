@@ -47,7 +47,7 @@ Each bench writes `bench-results/<UTC time>[-label]/`:
 |---|---|
 | `summary.md` | the tables (also printed at the end) |
 | `summary.json` | the same numbers, for scripts and for `--against` |
-| `report.html` | open this first: the **Compare policies** view (a bar chart per metric, policies against baselines, mean and spread over the seeds; time on each RAT; the full table), then every run in detail: per-class results, console log, and the time series if the bench ran with `--vectors` |
+| `report.html` | open this first: the dashboard. **Compare** puts the policies side by side (a bar chart per metric, policies against baselines, mean and spread over the seeds; time on each RAT; the full table). Below it, any run in detail: the map with measured coverage and the cars over time, the policy as a decision tree with how often each branch was taken, every decision with its inputs, the radio setup, and the results (time series only with `--vectors`) |
 | `bench.json` | the settings, the image and the commit it was built from |
 | `<run>/` | one folder per run, as written by `dash/run-experiment.sh` |
 | `.log-<scenario>-<policy>-s<seed>` | the console of a run, to look at when it fails |
@@ -74,11 +74,13 @@ the change is in brackets (percentages in points). A change smaller than the ± 
 
 ## The reference
 
-`bench/reference/` holds the standard bench of the current harness (`summary.md` to read,
-`summary.json` for `--against`). When a change to the harness is meant to change the results,
-rerun the bench and replace the reference in the same commit, so the next change is compared with
-the right numbers:
+`bench/reference/` holds the standard bench of the current harness: `report.html` to look at,
+`summary.md` to read, `summary.json` for `--against`. When a change to the harness is meant to
+change the results, rerun the bench and replace the reference in the same commit, so the next
+change is compared with the right numbers:
 
 ```bash
-bench/run.sh --label new && cp bench-results/<new bench>/summary.{md,json} bench/reference/
+bench/run.sh --save-reference      # copies summary.md, summary.json and report.html into bench/reference/
 ```
+
+`--save-reference` refuses a non-standard bench or one with failed runs.
