@@ -1,16 +1,21 @@
 //
 // MultiRatAppManager - application-layer RAT switching stack + handover KPIs.
 //
-// Periodically (or on a coverage change) it reads the per-RAT metrics from the
-// RatCoverageMonitor, asks the configured IRatSelectionPolicy which RAT should
-// be active, and - if that differs from the current RAT and is in range -
-// executes a handover by swapping the IPv4 default route onto the selected
-// RAT's interface. A RAT is only offered to the policy while it is usable
-// (RatCoverageMonitor: measured, above threshold, 802.11 associated), so the
-// route moves immediately; what the switch really costs (queued packets on the
-// old link, the new link's first-packet delay) comes out of the simulated
-// stacks and is measured at the receiver by MultiRatSink. Handover counts and
-// ping-pong are emitted as signals.
+// Every decisionInterval it builds a PolicyRequest for this vehicle (who and where
+// it is, what it is connected through, the per-RAT measurements from the
+// RatCoverageMonitor and what became of the previous decision) and asks the
+// configured policy which RAT to use. The manager adds nothing of its own to the
+// decision: no waiting, no smoothing. If the answer differs
+// from the current RAT and is in range, it executes a handover by swapping the
+// IPv4 default route onto that RAT's interface. docs/POLICY_REFERENCE.md describes
+// the request, the response and how to write a policy.
+//
+// A RAT is only usable while the RatCoverageMonitor reports it in range
+// (measured, above threshold, 802.11 associated), so the route moves
+// immediately; what the switch really costs (queued packets on the old link,
+// the new link's first-packet delay) comes out of the simulated stacks and is
+// measured at the receiver by MultiRatSink. Handover counts and ping-pong are
+// emitted as signals.
 //
 package multiratvanet;
 
@@ -24,14 +29,23 @@ simple MultiRatAppManager
         string routingTableModule = default("^.ipv4.routingTable");
         string interfaceTableModule = default("^.interfaceTable");
 
-        string policy = default("CoveragePriority"); // CoveragePriority|Sinr|LatencyQos|Load|Ml|Ensemble
+        string policy = default("CoveragePriority"); // CoveragePriority|Sinr|LatencyQos|Load|Ml|Ensemble|ExampleSplit
         double decisionInterval @unit(s) = default(0.5s);
-        bool decideOnlyOnCoverageChange = default(false);
-        // Extra delay before the route moves, for signalling the stacks do not simulate
-        // (e.g. IP mobility). 0 = the switch costs only what the simulated stacks cost.
+        // Scenario setting, not a policy tool: extra delay before the route moves, for signalling
+        // the stacks do not simulate (e.g. IP mobility). 0 = the switch costs only what the
+        // simulated stacks cost.
         double handoverExecDelay @unit(s) = default(0s);
         double pingPongWindow @unit(s) = default(2s);
         double startTime @unit(s) = default(1s);   // after the car appears; plus a random phase within decisionInterval
+
+        // ---- Policy tunables ----
+        // A different usable RAT must stay the policy's choice for this long before the switch
+        // (all policies; Ensemble applies it to the outcome of the vote). Losing the current RAT
+        // switches at once.
+        double timeToTrigger @unit(s) = default(1s);
+        double sinrSwitchMargin @unit(dB) = default(3dB); // Sinr: SINR-margin gain needed to prefer another RAT
+        double loadSwitchMargin = default(0.15);          // Load: load reduction (0..1) needed to prefer another RAT
+        double latencyBudget @unit(s) = default(100ms);   // LatencyQos: estimated latency a RAT must stay within
 
         // Per-target-RAT version of handoverExecDelay (each defaults to it).
         double dsrcHandoverDelay @unit(s) = default(handoverExecDelay);
@@ -54,7 +68,8 @@ simple MultiRatAppManager
         string nrInterface   = default("cellular");
         string sixgInterface = default("sixg0");
 
-        // Optional default-route gateway per RAT ("" => on-link / unspecified).
+        // Gateway per RAT: an IPv4 address, or "<module>%<interface>" (e.g. "router%eth0") for
+        // the address of that interface; "" => on-link / unspecified.
         string dsrcGateway = default("");
         string wifiGateway = default("");
         string lteGateway  = default("");
@@ -70,6 +85,7 @@ simple MultiRatAppManager
         @signal[outageTime](type=double);     // s, same as handoverLatency; real interruption: MultiRatSink
         @signal[decisionCount](type=long);    // 1 per policy evaluation
         @signal[handoverFailed](type=long);   // 1 per aborted handover (target lost)
+        @signal[decisionRejected](type=long); // 1 per policy answer naming a RAT that was not in range
 
         @statistic[handoverCount](title="handovers"; record=count,last,vector);
         @statistic[handoverLatency](title="handover latency"; unit=s; record=mean,max,vector);
@@ -79,4 +95,5 @@ simple MultiRatAppManager
         @statistic[outageTime](title="handover outage"; unit=s; record=sum,mean,vector);
         @statistic[decisionCount](title="policy decisions"; record=count,last);
         @statistic[handoverFailed](title="failed handovers"; record=count,last);
+        @statistic[decisionRejected](title="policy answers rejected (RAT not in range)"; record=count,last);
 }

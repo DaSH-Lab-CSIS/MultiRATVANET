@@ -4,6 +4,8 @@
 #ifndef MULTIRATVANET_MULTIRATTRAFFICAPP_H
 #define MULTIRATVANET_MULTIRATTRAFFICAPP_H
 
+#include <string>
+
 #include "inet/common/INETDefs.h"
 #include "inet/applications/base/ApplicationBase.h"
 #include "inet/networklayer/common/L3Address.h"
@@ -20,8 +22,11 @@ class MultiRatTrafficApp : public inet::ApplicationBase, public inet::UdpSocket:
     // parameters
     bool onOff = false;
     int destPort = -1;
+    int replyCount = 0;
     omnetpp::simtime_t startTime;
     omnetpp::simtime_t stopTime;
+    omnetpp::simtime_t deadline;
+    std::string trafficClass;
 
     // state
     inet::UdpSocket socket;
@@ -30,13 +35,18 @@ class MultiRatTrafficApp : public inet::ApplicationBase, public inet::UdpSocket:
     omnetpp::cMessage *sendTimer = nullptr;
     omnetpp::simtime_t burstEnd;          // end of the current "on" period (mode onoff)
     long seq = 0;
-    long epochSwitchCount = -1;           // manager switch count when the current epoch began
+    long epochSwitchCount = -1;           // the class's switch count when the current epoch began
     long epochStartSeq = 0;
     omnetpp::simtime_t epochStartTime;
     long sentPerRat[(int)RatId::COUNT] = {0};
     long sentNoRat = 0;
+    long repliesExpected = 0;
+    long repliesReceived = 0;
+    long repliesWithinDeadline = 0;
 
     omnetpp::simsignal_t packetSentSignal = -1;
+    omnetpp::simsignal_t replyReceivedSignal = -1;
+    omnetpp::simsignal_t replyDelaySignal = -1;
 
   protected:
     virtual int numInitStages() const override { return inet::NUM_INIT_STAGES; }
@@ -51,7 +61,7 @@ class MultiRatTrafficApp : public inet::ApplicationBase, public inet::UdpSocket:
     virtual void handleStopOperation(inet::LifecycleOperation *operation) override;
     virtual void handleCrashOperation(inet::LifecycleOperation *operation) override;
 
-    virtual void socketDataArrived(inet::UdpSocket *socket, inet::Packet *packet) override { delete packet; }
+    virtual void socketDataArrived(inet::UdpSocket *socket, inet::Packet *packet) override;
     virtual void socketErrorArrived(inet::UdpSocket *socket, inet::Indication *indication) override { delete indication; }
     virtual void socketClosed(inet::UdpSocket *socket) override {}
 

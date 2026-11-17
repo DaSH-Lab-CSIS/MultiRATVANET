@@ -85,8 +85,6 @@ void RatCoverageMonitor::initialize()
     for (int i = 0; i < (int)RatId::COUNT; ++i) {
         metrics_[i].id = static_cast<RatId>(i);
         metrics_[i].present = cfg_[i].has;
-        metrics_[i].estLatencyMs = cfg_[i].latencyMs;
-        metrics_[i].capacityMbps = cfg_[i].capacityMbps;
         minInfraDist_[i] = 1e9;
     }
 
@@ -107,10 +105,10 @@ void RatCoverageMonitor::initialize()
     measurementMaxAge_ = par("measurementMaxAge").doubleValue();
     inRangeHysteresisDb_ = par("inRangeHysteresis").doubleValue();
     filterWeight_ = par("filterWeight").doubleValue();
-    refPacketBits_ = par("latencyReferencePacket").intValue() * 8.0;
+    requireProbeEcho_ = par("requireProbeEcho").boolValue();
+    probeMaxAge_ = par("probeMaxAge").doubleValue();
     for (int i = 0; i < (int)RatId::COUNT; ++i) {
         minSinrDb_[i] = -1e9;
-        pathLatencyMs_[i] = 0;
         uplinkOffsetDb_[i] = 0;
         linkRateMbps_[i] = 0;
     }
@@ -118,8 +116,6 @@ void RatCoverageMonitor::initialize()
     minSinrDb_[(int)RatId::WIFI] = par("wifiMinSinr").doubleValue();
     minSinrDb_[(int)RatId::LTE] = par("lteMinSinr").doubleValue();
     minSinrDb_[(int)RatId::NR] = par("nrMinSinr").doubleValue();
-    pathLatencyMs_[(int)RatId::DSRC] = pathLatencyMs_[(int)RatId::WIFI] = par("wlanPathLatency").doubleValue() * 1e3;
-    pathLatencyMs_[(int)RatId::LTE] = pathLatencyMs_[(int)RatId::NR] = par("cellularPathLatency").doubleValue() * 1e3;
     dsrcNic_ = par("dsrcNic").stdstringValue();
     wifiNic_ = par("wifiNic").stdstringValue();
     for (int i = 0; i < (int)RatId::COUNT; ++i)
@@ -148,7 +144,6 @@ void RatCoverageMonitor::initialize()
 
         // Signals propagate up the module tree: one subscription on the car sees every radio in it.
         measuredSinrDlSignal_ = registerSignal("measuredSinrDl");
-        servedBlocksUlSignal_ = registerSignal("avgServedBlocksUl");
         car->subscribe(inet::receptionEndedSignal, this);
         car->subscribe(measuredSinrDlSignal_, this);
         car->subscribe(inet::physicallayer::IRadio::receptionStateChangedSignal, this);
@@ -156,8 +151,6 @@ void RatCoverageMonitor::initialize()
         for (simsignal_t s : { inet::l2AssociatedSignal, inet::l2AssociatedNewApSignal, inet::l2AssociatedOldApSignal,
                                inet::l2DisassociatedSignal, inet::l2BeaconLostSignal })
             car->subscribe(s, this);
-        // every gNB's uplink scheduler reports its allocated resource blocks each TTI
-        getSimulation()->getSystemModule()->subscribe(servedBlocksUlSignal_, this);
         for (auto &b : busy_)
             b.since = b.windowStart = simTime().dbl();
     }
@@ -242,7 +235,6 @@ void RatCoverageMonitor::refresh()
             }
         }
 
-        m.distanceToInfra = minDist;
         if (measuredMode_) {
             applyMeasurement(i, m, simTime().dbl());
         }
@@ -253,6 +245,30 @@ void RatCoverageMonitor::refresh()
             m.inRange = distOk && sigOk && (cfg_[i].infraType.empty() || !infra_[i].empty());
             m.rssiDbm = rssi;
             m.sinrDb = rssi + 100.0; // crude SINR proxy from RSSI (dB above -100 noise floor)
+            m.linked = m.inRange;
+            m.linkRateMbps = cfg_[i].capacityMbps;
+        }
+        // what the car's probes over this RAT have shown
+        const ProbeState &pr = probe_[i];
+        m.probeRttMs = pr.lastRttMs;
+        m.probeRttMeanMs = pr.meanRttMs;
+        m.probeLoss = pr.loss;
+        m.probeAge = pr.lastEchoTime >= 0 ? simTime().dbl() - pr.lastEchoTime : -1.0;
+        // usable only if the server has answered over this RAT lately: the link can be up and
+        // the signal good while nothing gets through
+        if (requireProbeEcho_ && !(m.probeAge >= 0 && m.probeAge <= probeMaxAge_))
+            m.inRange = false;
+        if (m.inRange) {
+            InputStats &st = inputStats_[i];
+            ++st.n;
+            st.sinrMargin += m.sinrDb - m.minSinrDb;
+            if (!std::isnan(m.load))
+                st.load += m.load;
+            st.linkRate += m.linkRateMbps;
+            if (!std::isnan(m.probeRttMeanMs)) {
+                st.probeRtt += m.probeRttMeanMs;
+                ++st.probeN;
+            }
         }
         bool inRange = m.inRange;
         if (minDist < minInfraDist_[i])
@@ -265,7 +281,6 @@ void RatCoverageMonitor::refresh()
             ++coverage;
     }
     emit(coverageCountSignal_, coverage);
-    servedBlocks_.clear();  // per-refresh window for the cellular load
 
     // --- CAV connectivity / availability accounting ---
     // Attribute the interval since the previous sample to the coverage state
@@ -324,17 +339,12 @@ void RatCoverageMonitor::applyMeasurement(int i, RatMetrics &m, double now)
     }
     w = Window();
 
-    // load: 802.11 channel busy ratio over this refresh; cellular serving-cell utilisation
+    // load: what the car's own radio senses, the 802.11 channel busy ratio over this refresh.
+    // A cellular UE cannot see how loaded its cell is, so cellular has no load figure.
     double bandwidthMHz = 0;
+    bool attached = false;
     if (cellular) {
-        if (const cModule *mac = servingCellMac(i, &bandwidthMHz)) {
-            auto it = servedBlocks_.find(mac);
-            if (it != servedBlocks_.end() && it->second.second > 0 && bandwidthMHz > 0) {
-                double numBands = bandwidthMHz / 0.18;
-                double util = std::min(1.0, it->second.first / it->second.second / numBands);
-                x.load = filter(x.load, util, false);
-            }
-        }
+        attached = servingCellMac(i, &bandwidthMHz) != nullptr;
     }
     else if (cfg_[i].has) {
         accountBusy(i, now);
@@ -351,27 +361,16 @@ void RatCoverageMonitor::applyMeasurement(int i, RatMetrics &m, double now)
     double threshold = minSinrDb_[i] + (x.inRange ? 0.0 : inRangeHysteresisDb_);
     x.inRange = fresh && linked && (!useSignal_ || x.sinrDb >= threshold);
 
-    double free = std::max(1.0 - x.load, 0.05);
     double linkRateMbps = cellular
             ? std::min(std::log2(1 + std::pow(10.0, x.sinrDb / 10)), 5.55) * bandwidthMHz  // 5.55 b/s/Hz: 64-QAM, highest CQI
             : linkRateMbps_[i];
     m.inRange = x.inRange;
+    m.linked = cellular ? attached : x.associated;
+    m.linkRateMbps = fresh ? linkRateMbps : 0;
+    m.measurementAge = x.valid ? now - x.time : -1.0;
     m.rssiDbm = fresh ? x.rssiDbm : NAN;
     m.sinrDb = fresh ? x.sinrDb : -50.0;
-    m.load = x.load;
-    m.capacityMbps = fresh ? linkRateMbps * (1 - x.load) : 0;
-    // path latency + service time of a reference packet, stretched by the load (M/M/1)
-    m.estLatencyMs = (fresh && linkRateMbps > 0)
-            ? pathLatencyMs_[i] + refPacketBits_ / (linkRateMbps * 1e6) / free * 1e3
-            : 1e6;
-    if (m.inRange) {
-        InputStats &st = inputStats_[i];
-        ++st.n;
-        st.sinrMargin += m.sinrDb - m.minSinrDb;
-        st.load += m.load;
-        st.capacity += m.capacityMbps;
-        st.latency += m.estLatencyMs;
-    }
+    m.load = cellular ? NAN : x.load;
 }
 
 void RatCoverageMonitor::accountBusy(int i, double now)
@@ -478,12 +477,6 @@ void RatCoverageMonitor::receiveSignal(cComponent *source, simsignal_t id, cObje
 // UE's channel model ("nrChannelModel[..]" for NR, "channelModel[..]" for LTE).
 void RatCoverageMonitor::receiveSignal(cComponent *source, simsignal_t id, double value, cObject *details)
 {
-    if (id == servedBlocksUlSignal_) {
-        auto &acc = servedBlocks_[dynamic_cast<cModule *>(source)];
-        acc.first += value;
-        ++acc.second;
-        return;
-    }
     if (id != measuredSinrDlSignal_)
         return;
     const char *name = source->getName();
@@ -517,9 +510,18 @@ void RatCoverageMonitor::receiveSignal(cComponent *source, simsignal_t id, intva
 
 RatCoverageMonitor::~RatCoverageMonitor()
 {
-    cModule *system = getSimulation() ? getSimulation()->getSystemModule() : nullptr;
-    if (system && servedBlocksUlSignal_ != -1 && system->isSubscribed(servedBlocksUlSignal_, this))
-        system->unsubscribe(servedBlocksUlSignal_, this);
+}
+
+void RatCoverageMonitor::reportProbe(RatId r, double lastRttMs, double meanRttMs, double loss, double lastEchoTime)
+{
+    Enter_Method_Silent();
+    int i = ratIndex(r);
+    if (i < 0 || i >= (int)RatId::COUNT)
+        return;
+    probe_[i].lastRttMs = lastRttMs;
+    probe_[i].meanRttMs = meanRttMs;
+    probe_[i].loss = loss;
+    probe_[i].lastEchoTime = lastEchoTime;
 }
 
 bool RatCoverageMonitor::isInRange(RatId r) const
@@ -585,9 +587,11 @@ void RatCoverageMonitor::finish()
             const InputStats &st = inputStats_[i];
             if (st.n > 0) {
                 recordScalar((base + ".inRangeSinrMargin").c_str(), st.sinrMargin / st.n, "dB");
-                recordScalar((base + ".inRangeLoad").c_str(), st.load / st.n);
-                recordScalar((base + ".inRangeCapacity").c_str(), st.capacity / st.n, "Mbps");
-                recordScalar((base + ".inRangeLatency").c_str(), st.latency / st.n, "ms");
+                if (i == (int)RatId::DSRC || i == (int)RatId::WIFI || i == (int)RatId::SIXG)
+                    recordScalar((base + ".inRangeLoad").c_str(), st.load / st.n);
+                recordScalar((base + ".inRangeLinkRate").c_str(), st.linkRate / st.n, "Mbps");
+                if (st.probeN > 0)
+                    recordScalar((base + ".inRangeProbeRtt").c_str(), st.probeRtt / st.probeN, "ms");
             }
         }
     }

@@ -2,12 +2,17 @@
 // EnsemblePolicy.h - consult all base policies and vote on a single RAT.
 //
 // Each constituent policy (CoveragePriority, Sinr, LatencyQos, Load) independently
-// proposes an in-range RAT; the ensemble tallies the weighted votes and elects the
-// RAT with the most support. Per-voter weights are configurable (0 disables a
-// voter). Because every base policy already enforces the inRange precondition, the
-// precondition, the elected RAT is always usable. A hysteresis rule keeps the
-// current RAT when its vote is within a margin of the leader (suppressing
-// ping-pong on near-ties), and any remaining tie is broken by coverage priority.
+// says which in-range RAT it prefers right now (prefer(): its own margins applied,
+// no time-to-trigger); the ensemble tallies the weighted votes and elects the RAT
+// with the most support. Per-voter weights are configurable (0 disables a voter).
+// Because every base policy already enforces the inRange precondition, the elected
+// RAT is always usable. A hysteresis rule keeps the current RAT when its vote is
+// within a margin of the leader (suppressing ping-pong on near-ties), and any
+// remaining tie is broken by coverage priority.
+//
+// Time-to-trigger is applied once, to the outcome of the vote. The members' own
+// timers are not used: each would reset the moment its vote was cast, so voters whose
+// preferences began at different times would never be counted together.
 //
 // The Ml policy is intentionally NOT a voter: it is an external FL/ML hook whose
 // unfed default merely mirrors CoveragePriority, which would double-weight it.
@@ -25,14 +30,15 @@
 
 namespace multiratvanet {
 
-class EnsemblePolicy : public IRatSelectionPolicy {
+class EnsemblePolicy : public TimeToTriggerPolicy {
   public:
-    explicit EnsemblePolicy(double stickiness = 1.0) : stickiness_(stickiness) {
+    explicit EnsemblePolicy(double stickiness = 1.0, const PolicyParams &p = PolicyParams())
+        : TimeToTriggerPolicy(p.timeToTrigger), stickiness_(stickiness) {
         // Order matters: it maps 1:1 to the weights_ vector and setWeights().
-        members_.emplace_back(new CoveragePriorityPolicy()); // weights_[0]
-        members_.emplace_back(new SinrPolicy());             // weights_[1]
-        members_.emplace_back(new LatencyQosPolicy());       // weights_[2]
-        members_.emplace_back(new LoadPolicy());             // weights_[3]
+        members_.emplace_back(new CoveragePriorityPolicy());       // weights_[0]
+        members_.emplace_back(new SinrPolicy(p.sinrMarginDb));     // weights_[1]
+        members_.emplace_back(new LatencyQosPolicy(p.maxLatencyMs)); // weights_[2]
+        members_.emplace_back(new LoadPolicy(p.loadMargin));       // weights_[3]
         weights_.assign(members_.size(), 1.0);
     }
 
@@ -43,13 +49,13 @@ class EnsemblePolicy : public IRatSelectionPolicy {
     }
     void setStickiness(double s) { stickiness_ = s; }
 
-    RatId select(RatId current, const RatMetricsVec &metrics) override {
+    RatId prefer(RatId current, const RatMetricsVec &metrics) const override {
         double votes[(int)RatId::COUNT] = {0};
         bool anyVote = false;
         for (size_t k = 0; k < members_.size(); ++k) {
             if (weights_[k] <= 0.0)
                 continue; // voter disabled
-            RatId r = members_[k]->select(current, metrics);
+            RatId r = members_[k]->prefer(current, metrics);
             if (usable(r, metrics)) {
                 votes[ratIndex(r)] += weights_[k];
                 anyVote = true;
@@ -84,7 +90,7 @@ class EnsemblePolicy : public IRatSelectionPolicy {
     const char *name() const override { return "Ensemble"; }
 
   private:
-    std::vector<std::unique_ptr<IRatSelectionPolicy>> members_;
+    std::vector<std::unique_ptr<TimeToTriggerPolicy>> members_;
     std::vector<double> weights_; // parallel to members_ (coverage, sinr, latency, load)
     double stickiness_; // votes within this margin of the leader keep current
 };

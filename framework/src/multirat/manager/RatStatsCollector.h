@@ -27,6 +27,10 @@ class RatCoverageMonitor;
 //
 class RatStatsCollector : public omnetpp::cSimpleModule
 {
+  public:
+    virtual ~RatStatsCollector();
+
+
   protected:
     virtual void initialize() override;
     virtual void handleMessage(omnetpp::cMessage *msg) override;

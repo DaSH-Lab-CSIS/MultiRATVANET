@@ -15,12 +15,18 @@
 
 namespace multiratvanet {
 
-class MlPolicy : public IRatSelectionPolicy {
+class MlPolicy : public TimeToTriggerPolicy {
   public:
-    MlPolicy() : fallback_() {}
+    explicit MlPolicy(double timeToTrigger = 1.0) : fallback_(CoveragePriorityPolicy::defaultOrder(), timeToTrigger) {}
 
     // Called by the external ML/FL controller between decisions.
     void suggest(RatId r) { suggested_ = r; }
+
+    RatId prefer(RatId current, const RatMetricsVec &metrics) const override {
+        if (usable(suggested_, metrics))
+            return suggested_;
+        return fallback_.prefer(current, metrics);
+    }
 
     RatId select(RatId current, const RatMetricsVec &metrics) override {
         if (usable(suggested_, metrics))

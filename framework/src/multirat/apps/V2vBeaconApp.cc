@@ -73,10 +73,17 @@ void V2vBeaconApp::handleStartOperation(LifecycleOperation *)
     if (ipv4Data == nullptr)
         ipv4Data = ie->addProtocolData<Ipv4InterfaceData>();
     if (ipv4Data->getIPAddress().isUnspecified()) {
+        // base + 1 + the car's index in its module vector (unique and never reused; the module
+        // id grows by several hundred per car and would leave the subnet within one long run)
         Ipv4Address base(par("v2vAddressBase").stringValue());
-        uint32_t addr = base.getInt() + (uint32_t)getContainingNode(this)->getId();
-        ipv4Data->setIPAddress(Ipv4Address(addr));
-        ipv4Data->setNetmask(Ipv4Address(par("v2vNetmask").stringValue()));
+        Ipv4Address netmask(par("v2vNetmask").stringValue());
+        cModule *host = getContainingNode(this);
+        uint32_t n = 1 + (uint32_t)(host->isVector() ? host->getIndex() : host->getId());
+        if (n >= ~netmask.getInt())
+            throw cRuntimeError("V2vBeaconApp: no address left in %s/%s for %s", base.str().c_str(),
+                    netmask.str().c_str(), host->getFullPath().c_str());
+        ipv4Data->setIPAddress(Ipv4Address(base.getInt() + n));
+        ipv4Data->setNetmask(netmask);
         ie->setBroadcast(true);
     }
 

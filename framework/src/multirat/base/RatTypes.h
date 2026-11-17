@@ -7,6 +7,7 @@
 #ifndef MULTIRATVANET_RATTYPES_H
 #define MULTIRATVANET_RATTYPES_H
 
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -39,18 +40,24 @@ inline const char *ratName(RatId r) {
 
 inline int ratIndex(RatId r) { return static_cast<int>(r); }
 
-// Per-RAT observable state, refreshed by the RatCoverageMonitor.
+// What a vehicle knows about one of its RATs, refreshed by the RatCoverageMonitor. Everything here
+// is something the car's own radio observes; nothing comes from the infrastructure's side or from
+// other vehicles. docs/POLICY_REFERENCE.md describes each field.
 struct RatMetrics {
     RatId id = RatId::NONE;
     bool present = false;      // this RAT exists on the node (interface up)
-    bool inRange = false;      // hard precondition: within usable coverage
-    double rssiDbm = -200.0;   // received signal strength (dBm)
-    double sinrDb = -50.0;     // signal-to-interference-plus-noise ratio (dB)
-    double distanceToInfra = 1e9; // metres to nearest AP/RSU/gNB (if known)
-    double estLatencyMs = 1e6; // estimated one-way/round latency proxy (ms)
-    double load = 0.0;         // normalized channel/cell load [0..1]
-    double capacityMbps = 0.0; // nominal/estimated available rate (Mbps)
+    bool inRange = false;      // usable now (computed by the harness): the only RATs a policy may choose
+    bool linked = false;       // 802.11: associated with an RSU/AP; cellular: attached to a serving cell
+    double sinrDb = -50.0;     // signal-to-interference-plus-noise ratio (dB), uplink estimate, filtered
     double minSinrDb = -1e9;   // lowest usable SINR for this RAT (dB); sinrDb - minSinrDb = margin
+    double rssiDbm = -200.0;   // received signal strength (dBm); NaN where the radio does not report it
+    double load = 0.0;         // channel busy ratio the radio senses [0..1]; NaN for cellular (a UE cannot see cell load)
+    double linkRateMbps = 0.0; // rate the radio would send at with the channel to itself (Mbps)
+    double probeRttMs = NAN;      // round-trip time of the latest probe echoed over this RAT (ms); NaN = none yet
+    double probeRttMeanMs = NAN;  // mean round trip of the probes of the last second (ms); NaN = none echoed
+    double probeLoss = NAN;       // share of recent probes that were not echoed [0..1]; NaN = none sent
+    double probeAge = -1.0;       // s since the latest echo; -1 = never
+    double measurementAge = -1.0; // s since the signal was last measured; -1 = never (or not measured: proxy mode)
     double lastUpdate = 0.0;   // sim time (s) of last refresh
 };
 
