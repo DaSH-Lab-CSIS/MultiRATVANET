@@ -16,7 +16,7 @@ import re
 import sys
 from datetime import datetime, timezone
 
-CACHE_VERSION = 8
+CACHE_VERSION = 9
 LOG_TAIL = 200
 BIN_STEPS = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500]
 MAX_POINTS = 120
@@ -619,6 +619,16 @@ pre.log { font: 12px/1.4 var(--mono); background: var(--surface-0); border: 1px 
           padding: 10px 12px; overflow: auto; max-height: 420px; margin: 8px 0 0; white-space: pre; }
 details > summary { cursor: pointer; color: var(--text-secondary); font-size: 12px; margin-top: 8px; }
 .note { font-size: 12px; color: var(--text-secondary); margin: 8px 0 0; }
+.hbar .lab { fill: var(--text-secondary); font-size: 12px; }
+.hbar .val { fill: var(--text-primary); font-size: 12px; font-variant-numeric: tabular-nums; }
+.hbar .whisk { stroke: var(--text-primary); stroke-width: 1.5; }
+.hbar .hit { fill: transparent; }
+.hbar .hit:hover { fill: color-mix(in srgb, var(--text-muted) 10%, transparent); }
+.hbar .sep { stroke: var(--border); stroke-dasharray: 3 3; }
+td.best { font-weight: 600; }
+#cmp-table tbody tr { cursor: pointer; }
+#cmp-table tbody tr:hover { background: color-mix(in srgb, var(--s1) 7%, transparent); }
+tr.base td:first-child { color: var(--text-secondary); }
 </style>
 </head>
 <body>
@@ -626,6 +636,9 @@ details > summary { cursor: pointer; color: var(--text-secondary); font-size: 12
   <h1>MultiRATVANET runs</h1>
   <p class="sub">Results in <code>{{ROOT}}</code>, generated <span id="gen"></span>. Rebuilt by <code>dash/run-experiment.sh</code> after every run.</p>
 
+  <div id="compare"></div>
+
+  <h2 id="one-run">One run</h2>
   <div class="filters">
     <label for="pick" class="muted">Run</label>
     <select id="pick"></select>
@@ -958,11 +971,261 @@ function renderHistory() {
   tb.append(body);
 }
 
+// ---------------------------------------------------------------------------------------------
+// Compare policies: runs of the same scenario, length, image and parameters, one row per policy,
+// averaged over seeds.
+const POLICY_ORDER = ["coverage_priority", "sinr", "latency_qos", "load", "ensemble", "ml", "example_split",
+                      "only_dsrc", "only_wifi", "only_nr"];
+const POLICY_LABEL = { coverage_priority: "CoveragePriority", sinr: "Sinr", latency_qos: "LatencyQos", load: "Load",
+  ensemble: "Ensemble", ml: "Ml", example_split: "ExampleSplit", only_dsrc: "only DSRC", only_wifi: "only WiFi", only_nr: "only 5G" };
+const isBaseline = p => p.startsWith("only_");
+const policyLabel = p => POLICY_LABEL[p] || p;
+// [key, title, kind, better]  kind: pct | ms | num
+const CMP_METRICS = [
+  ["safety_pdr", "Safety delivered", "pct", "high"],
+  ["safety_on_time", "Safety on time (100 ms)", "pct", "high"],
+  ["info_pdr", "Infotainment delivered", "pct", "high"],
+  ["info_on_time", "Infotainment on time (1 s)", "pct", "high"],
+  ["safety_delay", "Safety delay", "ms", "low"],
+  ["info_delay", "Infotainment delay", "ms", "low"],
+  ["ho", "Handovers per car", "num", "low"],
+  ["pingpong", "Ping-pongs (all cars)", "num", "low"],
+  ["gap", "Switch gap", "ms", "low"],
+];
+
+function runMetrics(r) {
+  const s = r.summary, out = {};
+  for (const c of s.classes || []) {
+    const k = c.name === "safety" ? "safety" : c.name === "infotainment" ? "info" : null;
+    if (!k) continue;
+    out[k + "_pdr"] = c.pdr; out[k + "_on_time"] = c.within_deadline; out[k + "_delay"] = c.delay_mean_ms;
+  }
+  out.ho = s.handovers_per_vehicle; out.pingpong = s.ping_pong; out.gap = s.interruption_mean_ms;
+  for (const [k, v] of Object.entries(s.shares || {})) out["share_" + k] = v;
+  return out;
+}
+
+function stats(vals) {
+  vals = vals.filter(v => v != null && isFinite(v));
+  if (!vals.length) return null;
+  const m = vals.reduce((a, b) => a + b, 0) / vals.length;
+  const sd = vals.length > 1 ? Math.sqrt(vals.reduce((a, b) => a + (b - m) ** 2, 0) / (vals.length - 1)) : 0;
+  return { m, sd, n: vals.length };
+}
+
+function comparisonGroups() {
+  const groups = new Map();
+  for (const r of RUNS) {
+    const m = r.meta || {};
+    if (r.status !== "ok" || !m.scenario || !m.policy || !r.summary) continue;
+    const params = (m.params || []).filter(p => !p.includes("vector-recording")).sort();
+    const key = [m.scenario, r.sim_time, m.repo_commit || "", params.join(" ")].join("|");
+    if (!groups.has(key)) groups.set(key, { key, scenario: m.scenario, simTime: r.sim_time, commit: m.repo_commit || "",
+                                             params, runs: [], latest: "" });
+    const g = groups.get(key);
+    g.runs.push(r);
+    if ((r.started || "") > g.latest) g.latest = r.started || "";
+  }
+  const out = [];
+  for (const g of groups.values()) {
+    const by = {};
+    for (const r of g.runs) (by[r.meta.policy] = by[r.meta.policy] || []).push(r);
+    g.policies = Object.keys(by).sort((a, b) => {
+      const ia = POLICY_ORDER.indexOf(a), ib = POLICY_ORDER.indexOf(b);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);
+    }).map(p => {
+      const ms = by[p].map(runMetrics), row = { policy: p, runs: by[p], seeds: by[p].map(r => r.meta.seed || "0").sort() };
+      const keys = new Set(ms.flatMap(Object.keys));
+      for (const k of keys) row[k] = stats(ms.map(x => x[k]));
+      return row;
+    });
+    if (g.policies.length >= 2) out.push(g);
+  }
+  return out.sort((a, b) => b.latest.localeCompare(a.latest));
+}
+
+const cmpFmt = (v, kind) => v == null ? "–" : kind === "pct" ? (v * 100).toFixed(1) + "%" : kind === "ms" ? fmt(v, 1) + " ms" : fmt(v, 2);
+
+// Horizontal bars, one per policy, with a whisker for the spread across seeds. Policies in the accent
+// colour, baselines in neutral grey; a dashed line separates the two.
+function hbarChart(title, better, rows, key, kind) {
+  const card = el("div", { class: "card chart hbar" });
+  card.append(el("h3", {}, title, el("span", { class: "muted", style: "font-weight:400", text: better === "high" ? "  · higher is better" : "  · lower is better" })));
+  const lg = el("div", { class: "legend" });
+  lg.append(el("span", {}, el("span", { class: "key box", style: "background:var(--s1)" }), "policy"),
+            el("span", {}, el("span", { class: "key box", style: "background:var(--text-muted)" }), "baseline (one RAT)"),
+            el("span", {}, el("span", { class: "key", style: "background:var(--text-primary);height:1.5px" }), "± spread across seeds"));
+  card.append(lg);
+  const data = rows.map(r => ({ r, s: r[key] })).filter(d => d.s);
+  if (!data.length) { card.append(el("div", { class: "empty", text: "Not recorded in these runs" })); return card; }
+  const avail = document.getElementById("compare").clientWidth || 560;
+  const W = Math.max(300, Math.min(560, avail >= 1066 ? (avail - 12) / 2 - 34 : avail - 34));
+  const rowH = 26, m = { l: 118, r: 70, t: 4, b: 22 }, H = m.t + m.b + rowH * rows.length;
+  const iw = W - m.l - m.r;
+  const xMax = kind === "pct" ? 1 : niceMax(Math.max(...data.map(d => d.s.m + d.s.sd)));
+  const x = v => m.l + Math.max(0, v) / xMax * iw;
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": title });
+  const ax = svgEl("g", { class: "axis" });
+  for (let i = 0; i <= 4; i++) {
+    const v = xMax * i / 4;
+    ax.append(svgEl("line", { class: i ? "gridline" : "baseline", x1: x(v), x2: x(v), y1: m.t, y2: H - m.b }));
+    const tx = svgEl("text", { x: x(v), y: H - 6, "text-anchor": i === 0 ? "start" : i === 4 ? "end" : "middle" });
+    tx.textContent = kind === "pct" ? (v * 100).toFixed(0) + "%" : fmt(v, 2); ax.append(tx);
+  }
+  svg.append(ax);
+  const tip = el("div", { class: "tip", hidden: "" });
+  rows.forEach((row, i) => {
+    const y0 = m.t + i * rowH, cy = y0 + rowH / 2, s = row[key], base = isBaseline(row.policy);
+    if (i > 0 && base && !isBaseline(rows[i - 1].policy))
+      svg.append(svgEl("line", { class: "sep", x1: 0, x2: W, y1: y0, y2: y0 }));
+    const lab = svgEl("text", { class: "lab", x: m.l - 8, y: cy + 4, "text-anchor": "end" });
+    lab.textContent = policyLabel(row.policy); svg.append(lab);
+    if (!s) return;
+    const bh = 14, x1 = x(s.m);
+    // 4px rounded data end, square at the baseline
+    const w = Math.max(1, x1 - m.l), rr = Math.min(4, w);
+    svg.append(svgEl("path", { d: `M${m.l},${cy - bh / 2}h${w - rr}a${rr},${rr} 0 0 1 ${rr},${rr}v${bh - 2 * rr}a${rr},${rr} 0 0 1 ${-rr},${rr}h${-(w - rr)}z`,
+                               fill: base ? "var(--text-muted)" : "var(--s1)" }));
+    if (s.sd > 0) {
+      const a = x(s.m - s.sd), b = x(Math.min(kind === "pct" ? 1 : Infinity, s.m + s.sd));
+      svg.append(svgEl("line", { class: "whisk", x1: a, x2: b, y1: cy, y2: cy }),
+                 svgEl("line", { class: "whisk", x1: a, x2: a, y1: cy - 4, y2: cy + 4 }),
+                 svgEl("line", { class: "whisk", x1: b, x2: b, y1: cy - 4, y2: cy + 4 }));
+    }
+    const val = svgEl("text", { class: "val", x: Math.max(x1, x(s.m + s.sd)) + 6, y: cy + 4 });
+    val.textContent = cmpFmt(s.m, kind); svg.append(val);
+    const hit = svgEl("rect", { class: "hit", x: 0, y: y0, width: W, height: rowH });
+    hit.addEventListener("pointerenter", () => {
+      tip.replaceChildren(el("div", { class: "ts", text: policyLabel(row.policy) + (base ? " (baseline)" : "") }),
+        el("div", { class: "row" }, el("b", { text: cmpFmt(s.m, kind) }), el("span", { class: "muted", text: `mean of ${s.n} seed${s.n > 1 ? "s" : ""}` })),
+        s.n > 1 ? el("div", { class: "row" }, el("span", { class: "muted", text: `± ${kind === "pct" ? (s.sd * 100).toFixed(1) + " points" : fmt(s.sd, 2)} across seeds` })) : null);
+      tip.hidden = false;
+      const r = svg.getBoundingClientRect();
+      tip.style.top = (svg.offsetTop + (cy + rowH / 2) / H * r.height + 4) + "px";
+      tip.style.left = Math.min(r.width - tip.offsetWidth, Math.max(0, x1 / W * r.width - tip.offsetWidth / 2)) + "px";
+    });
+    hit.addEventListener("pointerleave", () => { tip.hidden = true; });
+    svg.append(hit);
+  });
+  card.append(svg, tip);
+  return card;
+}
+
+// 100% stacked bar per policy: share of attached time on each RAT. 2px surface gap between segments.
+function shareChart(rows) {
+  const rats = ["DSRC", "WiFi", "NR", "Cellular", "LTE"].filter(k => rows.some(r => r["share_" + k] && r["share_" + k].m > 0));
+  const card = el("div", { class: "card chart hbar" });
+  card.append(el("h3", { text: "Time on each RAT (share of the time a car was attached, mean over cars and seeds)" }));
+  const lg = el("div", { class: "legend" });
+  for (const k of rats) lg.append(el("span", {}, el("span", { class: "key box", style: `background:var(${RAT_COLOR[k]})` }), k === "NR" ? "5G-NR" : k));
+  card.append(lg);
+  const avail = document.getElementById("compare").clientWidth || 560;
+  const W = Math.max(300, Math.min(1100, avail - 34)), rowH = 26, m = { l: 118, r: 10, t: 4, b: 22 };
+  const H = m.t + m.b + rowH * rows.length, iw = W - m.l - m.r;
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Time on each RAT per policy" });
+  const ax = svgEl("g", { class: "axis" });
+  for (let i = 0; i <= 4; i++) {
+    const tx = svgEl("text", { x: m.l + iw * i / 4, y: H - 6, "text-anchor": i === 0 ? "start" : i === 4 ? "end" : "middle" });
+    tx.textContent = (25 * i) + "%"; ax.append(tx);
+  }
+  svg.append(ax);
+  const tip = el("div", { class: "tip", hidden: "" });
+  rows.forEach((row, i) => {
+    const y0 = m.t + i * rowH, cy = y0 + rowH / 2, bh = 14;
+    if (i > 0 && isBaseline(row.policy) && !isBaseline(rows[i - 1].policy))
+      svg.append(svgEl("line", { class: "sep", x1: 0, x2: W, y1: y0, y2: y0 }));
+    const lab = svgEl("text", { class: "lab", x: m.l - 8, y: cy + 4, "text-anchor": "end" });
+    lab.textContent = policyLabel(row.policy); svg.append(lab);
+    const parts = rats.map(k => [k, row["share_" + k] ? row["share_" + k].m : 0]);
+    const tot = parts.reduce((a, [, v]) => a + v, 0) || 1;
+    let xx = m.l;
+    for (const [k, v] of parts) {
+      const w = v / tot * iw;
+      if (w > 2) svg.append(svgEl("rect", { x: xx + 1, y: cy - bh / 2, width: w - 2, height: bh, rx: 2, fill: `var(${RAT_COLOR[k]})` }));
+      xx += w;
+    }
+    const hit = svgEl("rect", { class: "hit", x: 0, y: y0, width: W, height: rowH });
+    hit.addEventListener("pointerenter", () => {
+      tip.replaceChildren(el("div", { class: "ts", text: policyLabel(row.policy) }),
+        ...parts.map(([k, v]) => el("div", { class: "row" }, el("span", { class: "key box", style: `background:var(${RAT_COLOR[k]})` }),
+                                    el("b", { text: (v * 100).toFixed(1) + "%" }), el("span", { class: "muted", text: k }))));
+      tip.hidden = false;
+      const r = svg.getBoundingClientRect();
+      tip.style.top = (svg.offsetTop + (cy + rowH / 2) / H * r.height + 4) + "px";
+      tip.style.left = Math.min(r.width - tip.offsetWidth, m.l / W * r.width) + "px";
+    });
+    hit.addEventListener("pointerleave", () => { tip.hidden = true; });
+    svg.append(hit);
+  });
+  card.append(svg, tip);
+  return card;
+}
+
+function comparisonTable(rows) {
+  const t = el("table", { id: "cmp-table" });
+  const cols = CMP_METRICS.concat([["share_DSRC", "On DSRC", "pct"], ["share_WiFi", "On WiFi", "pct"], ["share_NR", "On 5G", "pct"]]);
+  t.append(el("thead", {}, el("tr", {}, el("th", { text: "Policy" }), el("th", { class: "n", text: "Seeds" }),
+                                     ...cols.map(([, h]) => el("th", { class: "n", text: h })))));
+  // best mean per column, among the policies (not the baselines)
+  const best = {};
+  for (const [k, , , better] of cols) {
+    if (!better) continue;
+    const v = rows.filter(r => !isBaseline(r.policy) && r[k]).map(r => r[k].m);
+    if (v.length > 1) best[k] = better === "high" ? Math.max(...v) : Math.min(...v);
+  }
+  const b = el("tbody");
+  for (const r of rows) {
+    const tr = el("tr", { class: isBaseline(r.policy) ? "base" : "", tabindex: "0", title: "Open this policy's first run below" },
+      el("td", { text: policyLabel(r.policy) + (isBaseline(r.policy) ? " (baseline)" : "") }),
+      el("td", { class: "n", text: r.seeds.join(", ") }),
+      ...cols.map(([k, , kind]) => {
+        const s = r[k];
+        const td = el("td", { class: "n", text: s ? cmpFmt(s.m, kind) + (s.n > 1 ? ` ±${kind === "pct" ? (s.sd * 100).toFixed(1) : fmt(s.sd, kind === "num" ? 2 : 1)}` : "") : "–" });
+        if (s && best[k] != null && !isBaseline(r.policy) && s.m === best[k]) td.classList.add("best");
+        return td;
+      }));
+    const go = () => { const run = r.runs[0]; pick.value = run.id; history.replaceState(null, "", "#" + run.id); renderRun(run);
+                       document.getElementById("one-run").scrollIntoView({ behavior: "smooth" }); };
+    tr.addEventListener("click", go);
+    tr.addEventListener("keydown", e => { if (e.key === "Enter") go(); });
+    b.append(tr);
+  }
+  t.append(b);
+  return el("div", { class: "scroll" }, t);
+}
+
+function renderCompare(groups, g) {
+  const root = document.getElementById("compare");
+  root.replaceChildren(el("h2", { text: "Compare policies" }));
+  const f = el("div", { class: "filters" });
+  const sel = el("select", { id: "cmp-pick" });
+  for (const x of groups) sel.append(el("option", { value: x.key,
+    text: `${x.scenario}, ${fmt(x.simTime, 0)} s, ${x.policies.length} policies, ${x.runs.length} runs` + (x.commit ? `, commit ${x.commit.slice(0, 7)}` : "") + (x.params.length ? " (changed parameters)" : "") }));
+  sel.value = g.key;
+  sel.addEventListener("change", () => renderCompare(groups, groups.find(x => x.key === sel.value)));
+  f.append(el("label", { for: "cmp-pick", class: "muted", text: "Runs" }), sel);
+  root.append(f);
+  const seeds = [...new Set(g.policies.flatMap(p => p.seeds))].sort();
+  root.append(el("p", { class: "sub", text: `Same scenario, length, image and parameters; each policy averaged over seeds ${seeds.join(", ")} ` +
+    `(bars: mean, whisker: ± standard deviation across seeds). A difference smaller than the whiskers is not a difference.` +
+    (g.params.length ? ` Parameters changed for these runs: ${g.params.join(", ")}.` : "") }));
+  const grid = el("div", { class: "grid2" });
+  for (const [k, title, kind, better] of CMP_METRICS)
+    if (g.policies.some(p => p[k])) grid.append(hbarChart(title, better, g.policies, k, kind));
+  root.append(grid);
+  const sh = shareChart(g.policies); sh.style.marginTop = "12px"; root.append(sh);
+  root.append(el("div", { class: "card", style: "margin-top:12px" },
+    el("h3", { text: "All numbers (mean ± standard deviation across seeds; bold: best policy, baselines excluded; click a row to open its run)" }),
+    comparisonTable(g.policies)));
+}
+
 document.getElementById("gen").textContent = when(DATA.generated);
 const pick = document.getElementById("pick");
 for (const r of RUNS) pick.append(el("option", { value: r.id, text: `${when(r.started)} — ${label(r)}` }));
 pick.addEventListener("change", () => { history.replaceState(null, "", "#" + pick.value); renderRun(RUNS.find(r => r.id === pick.value)); });
 renderHistory();
+const CMP_GROUPS = comparisonGroups();
+if (CMP_GROUPS.length) renderCompare(CMP_GROUPS, CMP_GROUPS[0]);
 const linked = RUNS.find(r => "#" + r.id === decodeURIComponent(location.hash));
 if (linked) { pick.value = linked.id; renderRun(linked); }
 else if (RUNS.length) renderRun(RUNS[0]);

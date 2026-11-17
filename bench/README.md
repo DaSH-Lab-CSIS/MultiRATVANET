@@ -47,7 +47,7 @@ Each bench writes `bench-results/<UTC time>[-label]/`:
 |---|---|
 | `summary.md` | the tables (also printed at the end) |
 | `summary.json` | the same numbers, for scripts and for `--against` |
-| `report.html` | every run in detail: per-class results, console log, and the time series if the bench ran with `--vectors` |
+| `report.html` | open this first: the **Compare policies** view (a bar chart per metric, policies against baselines, mean and spread over the seeds; time on each RAT; the full table), then every run in detail: per-class results, console log, and the time series if the bench ran with `--vectors` |
 | `bench.json` | the settings, the image and the commit it was built from |
 | `<run>/` | one folder per run, as written by `dash/run-experiment.sh` |
 | `.log-<scenario>-<policy>-s<seed>` | the console of a run, to look at when it fails |
