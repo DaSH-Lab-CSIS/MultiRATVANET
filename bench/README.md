@@ -47,7 +47,7 @@ Each bench writes `bench-results/<UTC time>[-label]/`:
 |---|---|
 | `summary.md` | the tables (also printed at the end) |
 | `summary.json` | the same numbers, for scripts and for `--against` |
-| `report.html` | open this first: the dashboard. **Compare** puts the policies side by side (a bar chart per metric, policies against baselines, mean and spread over the seeds; time on each RAT; the full table). Below it, any run in detail: the map with measured coverage and the cars over time, the policy as a decision tree with how often each branch was taken, every decision with its inputs, the radio setup, and the results (time series only with `--vectors`) |
+| `report.html` | open this first: the policies compared, and nothing else. What ran and how to rerun it; bar charts per metric for traffic, coverage and switching (policies against the one-RAT baselines, mean and spread over the seeds); time on each RAT; why cars switched or stayed (from the decision logs); every number per policy and per run. For one run in detail (map, decisions), build the dashboard on that run's folder: `python3 dash/report.py <bench>/<run>` |
 | `bench.json` | the settings, the image and the commit it was built from |
 | `<run>/` | one folder per run, as written by `dash/run-experiment.sh` |
 | `.log-<scenario>-<policy>-s<seed>` | the console of a run, to look at when it fails |

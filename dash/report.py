@@ -1078,6 +1078,31 @@ def main(argv):
             if run["status"] != "no results" or run["meta"] or run["log"]:
                 runs.append(run)
     runs.sort(key=lambda r: r["started"] or "", reverse=True)
+    bench = None
+    try:
+        with open(os.path.join(root, "bench.json")) as f:
+            bench = json.load(f)
+    except (OSError, ValueError):
+        pass
+    if bench is not None:
+        # a test bench (bench/run.sh): the page compares the policies and shows no single run, so
+        # only what the comparison reads is kept
+        keep = ("id", "meta", "status", "summary", "sim_time", "started", "config", "cellular_merged")
+        for r in runs:
+            d = r.get("decisions")
+            light = {k: d[k] for k in ("count", "branches", "rat_stats") if k in d} if d else None
+            dec = (r.get("setup") or {}).get("decision")
+            for k in list(r):
+                if k not in keep:
+                    del r[k]
+            r["decisions"], r["decision"] = light, dec
+        data = json.dumps({"generated": datetime.now(timezone.utc).isoformat(timespec="seconds"), "runs": runs,
+                           "maps": {}, "bench": bench}, separators=(",", ":")).replace("</", "<\\/")
+        page = TEMPLATE.replace("/*DATA*/", data).replace("<!--HEAVY-->", "").replace("{{ROOT}}", html.escape(os.path.abspath(root)))
+        with open(out, "w") as f:
+            f.write(page)
+        print(f"report: test bench, {len(runs)} run(s) -> {out} ({os.path.getsize(out) / 1e6:.1f} MB)")
+        return 0
     for r in runs:  # maps live once in MAPS; a cached run may need its map loaded again
         if r.get("map") and r["map"] not in MAPS:
             r["map"] = road_map({"*.veinsManager.launchConfig": r["setup"]["launch"]}) if r.get("setup") else None
@@ -1250,6 +1275,8 @@ td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
 #history tbody tr { cursor: pointer; }
 #history tbody tr:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 #history tbody tr.sel { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+/* test bench page: the comparison only */
+body.bench .picker, body.bench nav, body.bench #s-history, body.bench #run { display: none; }
 /* compare */
 .hbar .lab { fill: var(--text-secondary); font-size: 12px; }
 .hbar .val { fill: var(--text-primary); font-size: 12px; font-variant-numeric: tabular-nums; }
@@ -2002,6 +2029,22 @@ const CMP_METRICS = [
   ["pingpong", "Ping-pongs (all cars)", "num", "low"],
   ["gap", "Switch gap", "ms", "low"],
 ];
+// the test bench page shows these too
+const BENCH_METRICS = {
+  traffic: ["safety_pdr", "safety_on_time", "info_pdr", "info_on_time", "safety_delay", "info_delay", "safety_delay_max", "info_delay_max"],
+  coverage: ["conn", "outage"],
+  switching: ["ho", "pingpong", "gap", "gap_max", "lost", "failed"],
+};
+const EXTRA_METRICS = [
+  ["safety_delay_max", "Safety worst delay", "ms", "low"],
+  ["info_delay_max", "Infotainment worst delay", "ms", "low"],
+  ["conn", "Time with a usable RAT", "pct", "high"],
+  ["outage", "Time without a usable RAT, per car", "s", "low"],
+  ["gap_max", "Worst switch gap", "ms", "low"],
+  ["lost", "Packets lost while switching (all cars)", "num", "low"],
+  ["failed", "Switches that failed (all cars)", "num", "low"],
+];
+const METRIC = Object.fromEntries(CMP_METRICS.concat(EXTRA_METRICS).map(m => [m[0], m]));
 
 function runMetrics(r) {
   const s = r.summary, out = {};
@@ -2009,8 +2052,13 @@ function runMetrics(r) {
     const k = c.name === "safety" ? "safety" : c.name === "infotainment" ? "info" : null;
     if (!k) continue;
     out[k + "_pdr"] = c.pdr; out[k + "_on_time"] = c.within_deadline; out[k + "_delay"] = c.delay_mean_ms;
+    out[k + "_delay_max"] = c.delay_max_ms;
   }
   out.ho = s.handovers_per_vehicle; out.pingpong = s.ping_pong; out.gap = s.interruption_mean_ms;
+  out.conn = s.connectivity; out.outage = s.vehicles ? s.outage_s / s.vehicles : null;
+  out.gap_max = s.interruption_max_ms; out.lost = s.interruption_lost; out.failed = s.handovers_failed;
+  const D = r.decisions;
+  if (D && D.count) for (const [b, n] of Object.entries(D.branches || {})) out["br_" + (b || "other")] = n / D.count;
   for (const [k, v] of Object.entries(s.shares || {})) out["share_" + k] = v;
   return out;
 }
@@ -2054,7 +2102,7 @@ function comparisonGroups() {
   return out.sort((a, b) => b.latest.localeCompare(a.latest));
 }
 
-const cmpFmt = (v, kind) => v == null ? "–" : kind === "pct" ? (v * 100).toFixed(1) + "%" : kind === "ms" ? fmt(v, 1) + " ms" : fmt(v, 2);
+const cmpFmt = (v, kind) => v == null ? "–" : kind === "pct" ? (v * 100).toFixed(1) + "%" : kind === "ms" ? fmt(v, 1) + " ms" : kind === "s" ? fmt(v, 1) + " s" : fmt(v, 2);
 
 // Horizontal bars, one per policy, with a whisker for the spread across seeds. Policies in the accent
 // colour, baselines in neutral grey; a dashed line separates the two.
@@ -2171,7 +2219,7 @@ function shareChart(rows) {
   return card;
 }
 
-function comparisonTable(rows) {
+function comparisonTable(rows, clickable = true) {
   const t = el("table", { id: "cmp-table" });
   const cols = CMP_METRICS.concat([["share_DSRC", "On DSRC", "pct"], ["share_WiFi", "On WiFi", "pct"], ["share_NR", "On 5G", "pct"]]);
   t.append(el("thead", {}, el("tr", {}, el("th", { text: "Policy" }), el("th", { class: "n", text: "Seeds" }),
@@ -2196,12 +2244,151 @@ function comparisonTable(rows) {
       }));
     const go = () => { const run = r.runs[0]; pick.value = run.id; history.replaceState(null, "", "#" + run.id);
                        showRun(run).then(() => document.getElementById("s-run").scrollIntoView({ behavior: "smooth" })); };
-    tr.addEventListener("click", go);
-    tr.addEventListener("keydown", e => { if (e.key === "Enter") go(); });
+    if (clickable) {
+      tr.addEventListener("click", go);
+      tr.addEventListener("keydown", e => { if (e.key === "Enter") go(); });
+    } else { tr.removeAttribute("tabindex"); tr.removeAttribute("title"); tr.style.cursor = "default"; }
     b.append(tr);
   }
   t.append(b);
   return el("div", { class: "scroll" }, t);
+}
+
+// Why cars switched or stayed: per policy, the share of decisions that ended in each outcome other
+// than "already on the top pick" (from the decision logs). Fixed colour per outcome.
+const BRANCHES = [["switch", "Switched: better for long enough", "--s1"], ["lost", "Switched: its RAT stopped working", "--s2"],
+                  ["wait", "Waiting out the time-to-trigger", "--s3"], ["margin", "Stayed: top pick not better by enough", "--s4"],
+                  ["sticky", "Stayed: close enough in the vote", "--s4"]];
+function branchChart(rows) {
+  const card = el("div", { class: "card chart hbar" });
+  card.append(el("h3", { text: "Why cars switched or stayed (share of all decisions; the rest stayed on the top pick)" }));
+  const used = BRANCHES.filter(([b]) => rows.some(r => r["br_" + b] && r["br_" + b].m > 0));
+  if (!used.length) { card.append(el("div", { class: "empty", text: "No decision logs in these runs" })); return card; }
+  const lg = el("div", { class: "legend" });
+  for (const [b, name, c] of used) if (b !== "sticky" || !used.some(x => x[0] === "margin"))
+    lg.append(el("span", {}, el("span", { class: "key box", style: `background:var(${c})` }), name + (b === "margin" && used.some(x => x[0] === "sticky") ? " (Ensemble: close enough in the vote)" : "")));
+  card.append(lg);
+  const avail = document.getElementById("s-compare").clientWidth || 560;
+  const W = Math.max(300, Math.min(1100, avail - 34)), rowH = 26, m = { l: 118, r: 60, t: 4, b: 22 };
+  const H = m.t + m.b + rowH * rows.length, iw = W - m.l - m.r;
+  const tot = r => used.reduce((a, [b]) => a + (r["br_" + b] ? r["br_" + b].m : 0), 0);
+  const xMax = niceMax(Math.max(...rows.map(tot), 0.001));
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Decision outcomes per policy" });
+  const ax = svgEl("g", { class: "axis" });
+  for (let i = 0; i <= 4; i++) {
+    const v = xMax * i / 4, xx = m.l + iw * i / 4;
+    ax.append(svgEl("line", { class: i ? "gridline" : "baseline", x1: xx, x2: xx, y1: m.t, y2: H - m.b }));
+    const tx = svgEl("text", { x: xx, y: H - 6, "text-anchor": i === 0 ? "start" : i === 4 ? "end" : "middle" });
+    tx.textContent = (v * 100).toFixed(v < 0.1 ? 1 : 0) + "%"; ax.append(tx);
+  }
+  svg.append(ax);
+  const tip = el("div", { class: "tip", hidden: "" });
+  rows.forEach((row, i) => {
+    const y0 = m.t + i * rowH, cy = y0 + rowH / 2, bh = 14;
+    if (i > 0 && isBaseline(row.policy) && !isBaseline(rows[i - 1].policy))
+      svg.append(svgEl("line", { class: "sep", x1: 0, x2: W, y1: y0, y2: y0 }));
+    const lab = svgEl("text", { class: "lab", x: m.l - 8, y: cy + 4, "text-anchor": "end" });
+    lab.textContent = policyLabel(row.policy); svg.append(lab);
+    let xx = m.l;
+    const parts = used.map(([b, name, c]) => [name, c, row["br_" + b] ? row["br_" + b].m : 0]).filter(p => p[2] > 0);
+    for (const [, c, v] of parts) {
+      const w = v / xMax * iw;
+      if (w > 2) svg.append(svgEl("rect", { x: xx + 1, y: cy - bh / 2, width: w - 2, height: bh, rx: 2, fill: `var(${c})` }));
+      xx += w;
+    }
+    const val = svgEl("text", { class: "val", x: xx + 6, y: cy + 4 });
+    val.textContent = (tot(row) * 100).toFixed(1) + "%"; svg.append(val);
+    const hit = svgEl("rect", { class: "hit", x: 0, y: y0, width: W, height: rowH });
+    hit.addEventListener("pointerenter", () => {
+      tip.replaceChildren(el("div", { class: "ts", text: policyLabel(row.policy) + " · share of all decisions" }),
+        ...(parts.length ? parts.map(([name, c, v]) => el("div", { class: "row" }, el("span", { class: "key box", style: `background:var(${c})` }),
+                                       el("b", { text: (v * 100).toFixed(2) + "%" }), el("span", { class: "muted", text: name })))
+                         : [el("div", { class: "muted", text: "always on the top pick" })]));
+      tip.hidden = false;
+      const r = svg.getBoundingClientRect();
+      tip.style.top = (svg.offsetTop + (cy + rowH / 2) / H * r.height + 4) + "px";
+      tip.style.left = Math.min(r.width - tip.offsetWidth, m.l / W * r.width) + "px";
+    });
+    hit.addEventListener("pointerleave", () => { tip.hidden = true; });
+    svg.append(hit);
+  });
+  card.append(svg, tip);
+  return card;
+}
+
+// Every run of the bench, one row per (policy, seed)
+function runsTable(g) {
+  const cols = [["safety_pdr", "Safety delivered", "pct"], ["safety_on_time", "Safety on time", "pct"], ["info_pdr", "Infot. delivered", "pct"],
+                ["info_on_time", "Infot. on time", "pct"], ["ho", "Handovers / car", "num"], ["pingpong", "Ping-pongs", "num"],
+                ["gap", "Switch gap", "ms"], ["conn", "Usable RAT", "pct"], ["share_DSRC", "On DSRC", "pct"], ["share_WiFi", "On WiFi", "pct"], ["share_NR", "On 5G", "pct"]];
+  const t = el("table");
+  t.append(el("thead", {}, el("tr", {}, el("th", { text: "Policy" }), el("th", { class: "n", text: "Seed" }), ...cols.map(([, h]) => el("th", { class: "n", text: h })))));
+  const b = el("tbody");
+  for (const p of g.policies)
+    for (const r of p.runs.slice().sort((a, c) => (a.meta.seed || "0").localeCompare(c.meta.seed || "0"))) {
+      const x = runMetrics(r);
+      b.append(el("tr", { class: isBaseline(p.policy) ? "base" : null }, el("td", { text: policyLabel(p.policy) }),
+        el("td", { class: "n", text: r.meta.seed || "0" }), ...cols.map(([k, , kind]) => el("td", { class: "n", text: cmpFmt(x[k], kind) }))));
+    }
+  t.append(b);
+  return el("div", { class: "scroll" }, t);
+}
+
+function renderBench(groups, g) {
+  const B = DATA.bench, root = document.getElementById("s-compare");
+  const std = B.standard;
+  root.replaceChildren(el("h2", { text: "Test bench" }));
+  const rerun = "bench/run.sh" + (std ? "" : " " + (B.extra || []).map(x => {
+    const [k, ...v] = x.split(" "); return `--${k === "set" ? "set" : k} '${v.join(" ")}'`; }).join(" "));
+  const btn = el("button", { type: "button", text: "Copy" });
+  btn.addEventListener("click", () => copyText(rerun, btn));
+  root.append(el("p", { class: "sub", text: "Every policy and the one-RAT baselines on the same scenario with the same seeds, side by side. " +
+    "Each number is the mean over the seeds; whiskers and ± are the standard deviation across seeds. A difference smaller than that is not a difference." }));
+  root.append(el("div", { class: "cmd" }, el("pre", { text: rerun, "aria-label": "Command that repeats this bench" }), btn));
+  const seeds = [...new Set(g.policies.flatMap(p => p.seeds))].sort();
+  const info = el("div", { class: "grid2" });
+  info.append(el("div", { class: "card" }, el("h3", { text: "What ran" }), kvList([
+    ["Scenario", g.scenario + (groups.length > 1 ? ` (one of ${groups.length}; pick below)` : "")],
+    ["Simulated time", `${fmt(g.simTime, 0)} s per run`], ["Seeds", seeds.join(", ")],
+    ["Policies", g.policies.filter(p => !isBaseline(p.policy)).map(p => policyLabel(p.policy)).join(", ")],
+    ["Baselines", g.policies.filter(p => isBaseline(p.policy)).map(p => policyLabel(p.policy)).join(", ") || "none"],
+    ["Settings", std ? "standard bench" : "NOT the standard bench: " + (B.extra || []).join("; ")],
+    ["Image", B.image], ["Code version", B.repo_commit], ["Started", when(B.started)], ["Runs", `${g.runs.length}` + (DATA.runs.some(r => r.status !== "ok") ? `, ${DATA.runs.filter(r => r.status !== "ok").length} failed` : ", all completed")]])));
+  info.append(el("div", { class: "card" }, el("h3", { text: "How to read it" }), kvList([
+    ["Safety", "small car-to-server messages; on time = arrived at the server within 100 ms"],
+    ["Infotainment", "requests the server answers with bigger replies; judged at the car, on time = the reply arrived within 1 s of the request"],
+    ["Handover", "the car moved its traffic to another RAT; a ping-pong is a move back within the ping-pong window"],
+    ["Switch gap", "from the first packet sent on the new RAT until the first one arrives"],
+    ["Usable RAT", "share of the time a car had at least one RAT it could use"],
+    ["Baselines", "use one RAT and nothing else: what a policy must beat"]])));
+  root.append(info);
+  if (groups.length > 1) {
+    const sel = el("select", { id: "cmp-pick" });
+    for (const x of groups) sel.append(el("option", { value: x.key, text: `${x.scenario}, ${fmt(x.simTime, 0)} s` }));
+    sel.value = g.key;
+    sel.addEventListener("change", () => renderBench(groups, groups.find(x => x.key === sel.value)));
+    root.append(el("div", { class: "filters", style: "margin-top:12px" }, el("label", { for: "cmp-pick", class: "muted", text: "Scenario" }), sel));
+  }
+  const part = (title, sub, keys) => {
+    root.append(el("h2", { text: title }));
+    if (sub) root.append(el("p", { class: "sub", text: sub }));
+    const grid = el("div", { class: "grid2" });
+    for (const k of keys) {
+      const [, t, kind, better] = METRIC[k];
+      if (g.policies.some(p => p[k])) grid.append(hbarChart(t, better, g.policies, k, kind));
+    }
+    root.append(grid);
+  };
+  part("Did the traffic get through", "Policies in blue, one-RAT baselines in grey. Hover a bar for its value and spread.", BENCH_METRICS.traffic);
+  part("Coverage", "How often cars had a RAT they could use at all.", BENCH_METRICS.coverage);
+  part("Switching", "How often cars changed RAT and what each change cost.", BENCH_METRICS.switching);
+  root.append(el("h2", { text: "How the policies chose" }));
+  root.append(shareChart(g.policies));
+  const bc = branchChart(g.policies); bc.style.marginTop = "12px"; root.append(bc);
+  root.append(el("h2", { text: "All numbers" }));
+  root.append(el("div", { class: "card" }, el("h3", { text: "Per policy: mean ± standard deviation across seeds (bold: best policy, baselines excluded)" }),
+    comparisonTable(g.policies, false)));
+  root.append(el("div", { class: "card", style: "margin-top:12px" }, el("h3", { text: "Every run" }), runsTable(g)));
 }
 
 function renderCompare(groups, g) {
@@ -2230,19 +2417,28 @@ function renderCompare(groups, g) {
     comparisonTable(g.policies)));
 }
 
+if (DATA.bench) document.body.classList.add("bench");
 document.getElementById("gen").textContent = when(DATA.generated);
 const pick = document.getElementById("pick");
 for (const r of RUNS) pick.append(el("option", { value: r.id, text: `${when(r.started)} · ${label(r)}` }));
 pick.addEventListener("change", () => { history.replaceState(null, "", "#" + pick.value); showRun(RUNS.find(r => r.id === pick.value)); });
-renderHistory();
 const CMP_GROUPS = comparisonGroups();
-if (CMP_GROUPS.length) {
+if (DATA.bench) {
+  document.querySelector("header.top h1").textContent = "MultiRATVANET test bench";
+  document.title = "MultiRATVANET test bench";
+  const sec = document.getElementById("s-compare");
+  sec.hidden = false;
+  if (CMP_GROUPS.length) renderBench(CMP_GROUPS, CMP_GROUPS[0]);
+  else sec.append(el("div", { class: "card empty", text: "No completed runs in this bench." }));
+} else renderHistory();
+if (!DATA.bench && CMP_GROUPS.length) {
   document.getElementById("s-compare").hidden = false;
   document.getElementById("nav-compare").hidden = false;
   renderCompare(CMP_GROUPS, CMP_GROUPS[0]);
 }
 const linked = RUNS.find(r => "#" + r.id === decodeURIComponent(location.hash));
-if (linked) { pick.value = linked.id; showRun(linked); }
+if (DATA.bench) { /* the bench page shows no single run */ }
+else if (linked) { pick.value = linked.id; showRun(linked); }
 else if (RUNS.length) showRun(RUNS[0]);
 else document.getElementById("run").append(el("div", { class: "card empty", text: "No runs yet. Start one with dash/run-experiment.sh." }));
 </script>
