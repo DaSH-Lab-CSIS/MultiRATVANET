@@ -40,6 +40,7 @@ SCENARIO=highway POLICY=coverage_priority CONFIG="" SIM_TIME="" SEED="" NAME=""
 REPORT=1 DRY=0
 PARAMS=()     # "label=value" for the run record
 OVERRIDES=()  # --<ini-key>=<value> passed to the simulation
+PASS=()       # scenario/policy parameter flags as given, for the rerun command in run.json
 
 usage() { sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 die() { echo "error: $*" >&2; exit 2; }
@@ -60,6 +61,10 @@ while [ $# -gt 0 ]; do
     elif [[ $flag == --* && $flag != --no-report && $flag != --dry-run && $flag != --help ]]; then
         [ $# -ge 2 ] || die "$flag needs a value"; val=$2; shift 2
     else val=""; shift; fi
+    case $flag in
+        --scenario|--policy|--config|--time|--seed|--name|--results|--image|--no-report|--dry-run|-h|--help) ;;
+        *) PASS+=("$flag" "$val") ;;
+    esac
     case $flag in
         --scenario) SCENARIO=$val ;;
         --policy)   POLICY=$val ;;
@@ -111,6 +116,7 @@ esac
 
 # (scenario, policy) presets carry per-scenario tuning from omnetpp.ini; other pairs are composed
 # from the scenario's base config plus a policy override
+CONFIG_GIVEN=$CONFIG
 if [ -z "$CONFIG" ]; then
     case "$SCENARIO/$POLICY" in
         highway/example_split|highway/only_*) CONFIG=$base; OVERRIDES=("--$M.policy=\"$pol\"" "${OVERRIDES[@]}") ;;
@@ -137,6 +143,13 @@ cmd=($DOCKER run --rm --name "mrv-$RUN_ID" --user "$(id -u):$(id -g)"
 
 if [ "$DRY" = 1 ]; then printf '%q ' "${cmd[@]}"; echo; exit 0; fi
 
+# shell-quote only where needed, so the command stays readable
+q() { if [[ $1 =~ ^[A-Za-z0-9_./=:,+@%-]+$ ]]; then printf '%s' "$1"; else printf "'%s'" "${1//\'/\'\\\'\'}"; fi; }
+rerun="dash/run-experiment.sh"
+for a in ${CONFIG_GIVEN:+--config "$CONFIG"} --scenario "$SCENARIO" --policy "$POLICY" --time "$SIM_TIME" --seed "${SEED:-0}" ${NAME:+--name "$NAME"} "${PASS[@]}"; do
+    rerun+=" $(q "$a")"
+done
+
 json() { local s=${1//\\/\\\\}; s=${s//\"/\\\"}; printf '"%s"' "$s"; }
 jlist() { local first=1; printf '['; for x in "$@"; do [ $first = 1 ] || printf ', '; first=0; json "$x"; done; printf ']'; }
 
@@ -154,6 +167,7 @@ set -e
 {
     printf '{\n  "run_id": %s,\n  "scenario": %s,\n  "policy": %s,\n  "config": %s,\n' \
         "$(json "$RUN_ID")" "$(json "$SCENARIO")" "$(json "$POLICY")" "$(json "$CONFIG")"
+    printf '  "command": %s,\n' "$(json "$rerun")"
     printf '  "sim_time": %s,\n  "seed": %s,\n  "name": %s,\n  "params": %s,\n  "overrides": %s,\n' \
         "$(json "$SIM_TIME")" "$(json "${SEED:-0}")" "$(json "$NAME")" "$(jlist "${PARAMS[@]}")" "$(jlist "${OVERRIDES[@]}")"
     printf '  "image": %s,\n  "image_id": %s,\n  "repo_commit": %s,\n' "$(json "$IMAGE")" "$(json "$image_id")" "$(json "$repo_commit")"

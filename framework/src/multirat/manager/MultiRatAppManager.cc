@@ -4,6 +4,7 @@
 #include "MultiRatAppManager.h"
 
 #include <cmath>
+#include <cstdio>
 
 #include "RatCoverageMonitor.h"
 #include "policies/RatPolicyFactory.h"
@@ -28,6 +29,29 @@ using namespace omnetpp;
 using namespace inet;
 
 Define_Module(MultiRatAppManager);
+
+// One decision log per run, shared by every car: opened by the first car that decides, closed
+// when the last car is gone.
+static std::shared_ptr<std::ofstream> openDecisionLog(const std::string &path, const RatMetricsVec &metrics)
+{
+    static std::map<std::string, std::weak_ptr<std::ofstream>> open;
+    if (auto f = open[path].lock())
+        return f;
+    auto f = std::make_shared<std::ofstream>(path, std::ios::trunc);
+    if (!*f)
+        throw cRuntimeError("cannot write decision log '%s'", path.c_str());
+    // per RAT: usable, SINR margin (dB above the RAT's minimum), sensed load, link rate (Mbit/s),
+    // mean probe round trip (ms), serving RSU/AP/cell
+    *f << "t,car,x,y,current,choice,branch,detail";
+    for (const auto &m : metrics)
+        if (m.present) {
+            std::string r = ratName(m.id);
+            *f << ',' << r << "_ok," << r << "_sinr," << r << "_load," << r << "_rate," << r << "_rtt," << r << "_via";
+        }
+    *f << '\n';
+    open[path] = f;
+    return f;
+}
 
 int MultiRatAppManager::numInitStages() const
 {
@@ -163,7 +187,10 @@ void MultiRatAppManager::decide()
     const RatMetricsVec &metrics = monitor_->getMetrics();
 
     emit(decisionCountSignal_, (long)1);
+    RatId before = current_;
     PolicyResponse response = policy_->decide(buildRequest());
+    if (!par("decisionLog").stdstringValue().empty())
+        logDecision(before, response, metrics);
     RatId target = response.rat;
     previous_.requestedRat = target;
     if (!response.reason.empty())
@@ -187,6 +214,37 @@ void MultiRatAppManager::decide()
         entry.second.overrideRat = own;
     }
     updateClassRats();
+}
+
+// One row per decision: where the car was, what each RAT measured, what the policy chose and why.
+void MultiRatAppManager::logDecision(RatId before, const PolicyResponse &response, const RatMetricsVec &metrics)
+{
+    if (!decisionLog_)
+        decisionLog_ = openDecisionLog(par("decisionLog").stdstringValue(), metrics);
+    double x = NAN, y = NAN;
+    monitor_->getPosition(x, y);
+    auto rat = [](RatId r) { return r == RatId::NONE ? "" : ratName(r); };
+    std::string detail = response.reason;
+    for (char &ch : detail)
+        if (ch == ',' || ch == '\n') ch = ';';
+    std::ofstream &f = *decisionLog_;
+    char buf[200];
+    snprintf(buf, sizeof buf, "%.3f,%d,%.1f,%.1f,%s,%s,%s,", simTime().dbl(), getContainingNode(this)->getIndex(), x, y,
+             rat(before), rat(response.rat), response.branch.c_str());
+    f << buf << detail;
+    auto num = [&](double v, const char *fmt) { if (std::isnan(v)) return std::string(); snprintf(buf, sizeof buf, fmt, v); return std::string(buf); };
+    for (const auto &m : metrics) {
+        if (!m.present)
+            continue;
+        bool measured = m.measurementAge >= 0 && m.sinrDb > -49.9;  // -50 = no fresh measurement
+        f << ',' << (m.inRange ? 1 : 0)
+          << ',' << (measured ? num(m.sinrDb - m.minSinrDb, "%.1f") : "")
+          << ',' << num(m.load, "%.3f")
+          << ',' << (m.linkRateMbps > 0 ? num(m.linkRateMbps, "%.2f") : "")
+          << ',' << num(m.probeRttMeanMs, "%.2f")
+          << ',' << monitor_->servingNodeName(m.id);
+    }
+    f << '\n';
 }
 
 void MultiRatAppManager::applyDefaultRat(RatId target, const RatMetricsVec &metrics)

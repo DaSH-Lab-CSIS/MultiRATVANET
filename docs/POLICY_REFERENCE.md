@@ -195,11 +195,20 @@ A reply counts in the window it arrives in, which can be the one after its reque
 struct PolicyResponse {
     RatId rat;                               // the default RAT
     std::map<std::string, RatId> classRat;   // optional: a different RAT for a class
-    std::string reason;                      // optional, written to the simulation log
+    std::string reason;                      // optional, written to the simulation log and the decision log
+    std::string branch;                      // optional: which outcome of the policy's decision tree this was
 };
 ```
 
 `PolicyResponse(RatId)` puts every class on one RAT, which is what the built-in policies do.
+
+`reason` and `branch` change nothing in the simulation. Every decision is written to
+`<config>-#<run>.decisions.csv` next to the `.sca` (parameter `decisionLog`): the car's position,
+what each RAT measured, the choice, `branch` and `reason`. The report draws its map, decision-tree
+counts and decision table from it. The built-in policies set `branch` to one of `none`, `start`,
+`lost`, `best`, `margin`, `wait`, `switch` (Ensemble also `sticky`), and the report's decision tree
+for each built-in policy uses those names. A policy of your own may leave both empty; the report
+then lists its decisions as "Policy's choice", with the `reason` if there is one.
 
 **`rat`, the default RAT**
 

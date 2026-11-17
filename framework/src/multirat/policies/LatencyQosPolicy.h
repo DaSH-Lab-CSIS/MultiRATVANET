@@ -49,6 +49,16 @@ class LatencyQosPolicy : public TimeToTriggerPolicy {
 
     const char *name() const override { return "LatencyQos"; }
 
+  protected:
+    std::string marginNote(RatId current, RatId top, const RatMetricsVec &metrics) const override {
+        double c = metrics[ratIndex(current)].linkRateMbps, t = metrics[ratIndex(top)].linkRateMbps;
+        if (!(c > 0))
+            return "";
+        char buf[48];
+        snprintf(buf, sizeof buf, "%+.0f%% link rate, needs +25%%", (t / c - 1) * 100);
+        return buf;
+    }
+
   private:
     // one-way latency of a RAT as the car knows it: half the mean round trip of its probes
     static double latencyMs(const RatMetrics &m) {

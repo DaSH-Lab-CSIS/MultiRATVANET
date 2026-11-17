@@ -25,6 +25,9 @@ class SingleRatPolicy : public IRatSelectionPolicy {
     PolicyResponse decide(const PolicyRequest &req) override {
         PolicyResponse resp;
         resp.rat = usable(rat_, req.rats) ? rat_ : RatId::NONE; // NONE: keep what we have
+        RatId cur = req.connection.currentRat;
+        resp.branch = resp.rat == RatId::NONE ? (cur == RatId::NONE ? "none" : "lost")
+                    : cur == RatId::NONE ? "start" : cur == rat_ ? "best" : "switch";
         return resp;
     }
 
