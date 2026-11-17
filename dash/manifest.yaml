@@ -9,8 +9,8 @@ tool:
 # ---------------------------------------------------------------------------------------------
 # How to run ONE job. Placeholders are filled by the runner from the job request.
 #   {omnetpp_config}  config name from the selected run (or the scenario base_config when composed)
-#   {sim_time}        duration; defaults to the scenario's default_sim_time (tools/run.sh itself defaults to
-#                     100s and would override every config's own limit, so it is ALWAYS passed)
+#   {sim_time}        duration; defaults to the scenario's default_sim_time (when --sim-time-limit is not
+#                     passed, tools/run.sh leaves the config's own limit in place)
 #   {param_args}      expands to zero or more argv entries, one "--<ini_key>=<value>" per parameter that
 #                     the job sets (parameters not set are omitted, so the config's own value applies)
 # argv is passed without a shell. tools/run.sh forwards unknown --key=value args to the simulation.
@@ -28,7 +28,8 @@ run:
     distance: "{v}"                      # number + unit, e.g. 300m
     string: "\"{v}\""                    # NED string literal: the quotes are part of the argv entry
   seed:
-    # OMNeT++ seed set; tools/run.sh passes -r 0 so repetitions are selected with --seed-set.
+    # OMNeT++ seed set. The registered configs have one run each, so repetitions are selected with
+    # --seed-set (tools/run.sh runs all runs of a config; --run=N picks one of a parameter study).
     # Verified 2026-11-01: --seed-set=1 shows up as "attr seedset 1" in the .sca.
     ini_key: seed-set
     status: verified
@@ -48,17 +49,17 @@ outputs:
 # ---------------------------------------------------------------------------------------------
 scenarios:
   - id: highway
-    description: 2 km straight road, 50 vehicles (DSRC/WiFi/NR/LTE)
+    description: 2 km straight road, 17 vehicles (DSRC/WiFi/NR)
     base_config: MultiRatHighway_Base
     default_sim_time: 300s
     default_values: {decision_interval: 0.5s}
     metrics_profile: handover
     sumo: simulations/scenarios/highway
-  - id: highway_dsrc_lte
-    description: Highway V2I heterogeneous handover, DSRC near RSUs and LTE in the gaps (WiFi and NR off)
-    base_config: DsrcLteHandover
+  - id: highway_dsrc_nr
+    description: Highway V2I heterogeneous handover, DSRC near RSUs and 5G-NR in the gaps (WiFi off)
+    base_config: DsrcNrHandover
     default_sim_time: 300s
-    default_values: {decision_interval: 0.25s, dsrc_handover_delay: 100ms, lte_handover_delay: 40ms}
+    default_values: {decision_interval: 0.25s, dsrc_handover_delay: 100ms, nr_handover_delay: 40ms}
     metrics_profile: handover
     sumo: simulations/scenarios/highway
   - id: highway_v2v
@@ -97,12 +98,13 @@ scenarios:
 # pair has no explicit entry in `runs` (composition; EXPERIMENTAL, validated for one pair first).
 # ---------------------------------------------------------------------------------------------
 algorithms:
-  - {id: coverage_priority, description: "Coverage priority (DSRC>WiFi>NR>LTE)", overrides: {"*.car[*].multiRatAppManager.policy": {type: string, value: CoveragePriority}}}
+  - {id: coverage_priority, description: "Coverage priority (DSRC>WiFi>NR)", overrides: {"*.car[*].multiRatAppManager.policy": {type: string, value: CoveragePriority}}}
   - {id: sinr,              description: "Pick the in-range RAT with the best signal quality", overrides: {"*.car[*].multiRatAppManager.policy": {type: string, value: Sinr}}}
-  - {id: latency_qos,       description: "Meet the latency budget with the most capacity",      overrides: {"*.car[*].multiRatAppManager.policy": {type: string, value: LatencyQos}}}
+  - {id: latency_qos,       description: "Meet the latency budget with the highest link rate",     overrides: {"*.car[*].multiRatAppManager.policy": {type: string, value: LatencyQos}}}
   - {id: load,              description: "Balance load across in-range RATs",                    overrides: {"*.car[*].multiRatAppManager.policy": {type: string, value: Load}}}
   - {id: ensemble,          description: "Weighted vote of all base policies",                   overrides: {"*.car[*].multiRatAppManager.policy": {type: string, value: Ensemble}}}
-  - {id: ml,                description: "Learned / federated controller hook",                 overrides: {"*.car[*].multiRatAppManager.policy": {type: string, value: Ml}}}
+  - {id: ml,                description: "Learned / federated controller hook (no controller attached: decides like coverage_priority)",                 overrides: {"*.car[*].multiRatAppManager.policy": {type: string, value: Ml}}}
+  - {id: example_split,     description: "Template, not a benchmark policy: safety on the fastest short-range RAT, infotainment on NR", overrides: {"*.car[*].multiRatAppManager.policy": {type: string, value: ExampleSplit}}}
 
 # ---------------------------------------------------------------------------------------------
 # Explicit runs: (scenario, algorithm) -> omnetpp config. These are presets: they carry scenario-specific
@@ -116,7 +118,7 @@ runs:
   - {scenario: highway,          algorithm: load,              omnetpp_config: Load}
   - {scenario: highway,          algorithm: ml,                omnetpp_config: Ml}
   - {scenario: highway,          algorithm: ensemble,          omnetpp_config: Ensemble}
-  - {scenario: highway_dsrc_lte, algorithm: coverage_priority, omnetpp_config: DsrcLteHandover}
+  - {scenario: highway_dsrc_nr,  algorithm: coverage_priority, omnetpp_config: DsrcNrHandover}
   - {scenario: highway_v2v,      algorithm: coverage_priority, omnetpp_config: V2V}
   - {scenario: highway_cv2x,     algorithm: coverage_priority, omnetpp_config: CV2X}
   - {scenario: urbangrid,        algorithm: coverage_priority, omnetpp_config: UrbanGrid_CoveragePriority}
@@ -126,28 +128,28 @@ runs:
   - {scenario: electroniccity,   algorithm: ensemble,          omnetpp_config: ElectronicCity_Ensemble}
   - {scenario: electroniccity,   algorithm: ml,                omnetpp_config: ElectronicCity_ML}
 # Not registered as runs, by design:
-#   Dense, UrbanGrid_Dense, ElectronicCity_Dense -> their numCars override is a no-op (see the note under parameters); only the
-#                                                   ensemble_stickiness bump in UrbanGrid_Dense has an effect, via that parameter
+#   Dense, UrbanGrid_Dense, ElectronicCity_Dense -> not denser (the vehicle count comes from the SUMO route file, see the note under
+#                                                   parameters); the *_Dense urban configs only raise ensemble_stickiness
 #   EnsembleSweep                                -> dashboard sweep over ensemble_weight_sinr x ensemble_weight_latency
 #                                                   with ensemble_stickiness=0 on the ensemble algorithm
 
 # ---------------------------------------------------------------------------------------------
 # Parameters: typed tunables mapped to OMNeT++ ini keys, sent as --<ini_key>=<value> only when set.
-# NOTE: there is deliberately no num_cars. `*.*.numCars` is not declared in any NED file and has no effect: the
+# NOTE: there is deliberately no num_cars: the
 # vehicle count comes from the SUMO route file (highway: 10 eastbound + 7 westbound = 17). Traffic density needs a
 # parameter kind that generates a file (route flow period), which the contract does not have yet.
 # scope: scenario | algorithm.  sweepable: usable as a sweep axis.  applies_to: ids it is valid for.
 # ---------------------------------------------------------------------------------------------
 parameters:
   - {id: decision_interval,    scope: scenario,  type: duration, ini_key: "*.car[*].multiRatAppManager.decisionInterval",              sweepable: true, applies_to: all, description: RAT re-evaluation interval}
+  - {id: time_to_trigger,      scope: algorithm, type: duration, ini_key: "*.car[*].multiRatAppManager.timeToTrigger",                 sweepable: true, applies_to: all, description: How long a better RAT must stay preferred before the switch (default 1s)}
+  - {id: probe_interval,       scope: scenario,  type: duration, ini_key: "*.car[*].app[2].probeInterval",                             sweepable: true, applies_to: [highway, highway_dsrc_nr, urbangrid, electroniccity], description: "How often each car probes every linked RAT (default 100ms). Probes are real traffic."}
   - {id: dsrc_range,           scope: scenario,  type: distance, ini_key: "*.car[*].ratCoverageMonitor.dsrcRange",                     sweepable: true, applies_to: all}
   - {id: wifi_range,           scope: scenario,  type: distance, ini_key: "*.car[*].ratCoverageMonitor.wifiRange",                     sweepable: true, applies_to: [highway, urbangrid, electroniccity]}
   - {id: nr_range,             scope: scenario,  type: distance, ini_key: "*.car[*].ratCoverageMonitor.nrRange",                       sweepable: true, applies_to: [highway, electroniccity]}
-  - {id: lte_range,            scope: scenario,  type: distance, ini_key: "*.car[*].ratCoverageMonitor.lteRange",                      sweepable: true, applies_to: [urbangrid, electroniccity]}
-  - {id: lte_interface,        scope: scenario,  type: string,   ini_key: "*.car[*].multiRatAppManager.lteInterface",             applies_to: all, description: "Name of the LTE network interface the manager routes through. Simu5G 1.7 names it \"cellular\" (the ini default since the fix; it used to be \"wlan\", which made every cellular handover fail)"}
-  - {id: nr_interface,         scope: scenario,  type: string,   ini_key: "*.car[*].multiRatAppManager.nrInterface",              applies_to: all, description: "Name of the NR network interface; \"cellular\" (see lte_interface)"}
-  - {id: dsrc_handover_delay,  scope: scenario,  type: duration, ini_key: "*.car[*].multiRatAppManager.dsrcHandoverDelay",             sweepable: true, applies_to: [highway_dsrc_lte]}
-  - {id: lte_handover_delay,   scope: scenario,  type: duration, ini_key: "*.car[*].multiRatAppManager.lteHandoverDelay",              sweepable: true, applies_to: [highway_dsrc_lte]}
+  - {id: nr_interface,         scope: scenario,  type: string,   ini_key: "*.car[*].multiRatAppManager.nrInterface",              applies_to: all, description: "Name of the cellular (NR) network interface the manager routes through. Simu5G 1.7 names it \"cellular\" (the ini default; it used to be \"wlan\", which made every cellular handover fail)"}
+  - {id: dsrc_handover_delay,  scope: scenario,  type: duration, ini_key: "*.car[*].multiRatAppManager.dsrcHandoverDelay",             sweepable: true, applies_to: [highway_dsrc_nr]}
+  - {id: nr_handover_delay,    scope: scenario,  type: duration, ini_key: "*.car[*].multiRatAppManager.nrHandoverDelay",               sweepable: true, applies_to: [highway_dsrc_nr]}
   - {id: ensemble_weight_coverage, scope: algorithm, type: double, min: 0, ini_key: "*.car[*].multiRatAppManager.ensembleWeightCoverage", sweepable: true, applies_to: [ensemble], description: Voter weight, 0 disables}
   - {id: ensemble_weight_sinr,     scope: algorithm, type: double, min: 0, ini_key: "*.car[*].multiRatAppManager.ensembleWeightSinr",     sweepable: true, applies_to: [ensemble]}
   - {id: ensemble_weight_latency,  scope: algorithm, type: double, min: 0, ini_key: "*.car[*].multiRatAppManager.ensembleWeightLatency",  sweepable: true, applies_to: [ensemble]}
@@ -161,8 +163,7 @@ parameters:
 # Aggregation is across entities (here: vehicles); NaN values are skipped and counted (n_missing).
 # `headline` is the aggregate shown by default in compare views; `better` says which direction is good.
 # Mapping from scalars written by multiRatAppManager and ratCoverageMonitor (verified on a real result file).
-# NOT YET MAPPED (not in these modules' scalars): end-to-end latency, packet loss, throughput (need app-level
-# statistics), and the v2v / cv2x profiles.
+# NOT YET MAPPED: the v2v / cv2x profiles.
 # ---------------------------------------------------------------------------------------------
 metrics:
   schema: dash-metrics/0
@@ -173,25 +174,27 @@ metrics:
       modules:
         manager:  '\.car\[\d+\]\.multiRatAppManager$'
         coverage: '\.car\[\d+\]\.ratCoverageMonitor$'
-        car_app:    '\.car\[\d+\]\.app\[0\]$'
+        car_app:    '\.car\[\d+\]\.app\[0\]$'       # safety: car -> server, acknowledged
         server_app: '\.server\.app\[0\]$'
+        car_info:   '\.car\[\d+\]\.app\[1\]$'       # infotainment: requested by the car, data server -> car
+        car_probe:  '\.car\[\d+\]\.app\[2\]$'       # the car's probes of every linked RAT
       metrics:
         - {id: handover_count,         label: Handovers,                     unit: count, module: manager,  scalar: handoversTotal,       aggregate: [mean, sum, max], headline: mean, better: lower}
         - {id: ping_pong_count,        label: Ping-pong handovers,           unit: count, module: manager,  scalar: pingPongTotal,        aggregate: [mean, sum],      headline: mean, better: lower}
         - {id: ping_pong_ratio,        label: Ping-pong ratio,               unit: ratio, module: manager,  scalar: pingPongRatio,        aggregate: [mean, max],      headline: mean, better: lower}
         - {id: handover_failed_count,  label: Failed handovers,              unit: count, module: manager,  scalar: "handoverFailed:count", aggregate: [mean, sum],    headline: mean, better: lower}
         - {id: decision_count,         label: Policy decisions,              unit: count, module: manager,  scalar: "decisionCount:count",  aggregate: [mean, sum],    headline: mean, better: none}
-        - {id: handover_delay_total_s, label: Total handover delay,          unit: s,     module: manager,  scalar: handoverDelayTotal,    aggregate: [sum, mean],      headline: sum,  better: lower}
-        - {id: handover_delay_max_s,   label: Worst handover delay,          unit: s,     module: manager,  scalar: handoverDelayMax,      aggregate: [max],            headline: max,  better: lower}
-        - {id: handover_delay_mean_s,  label: Mean handover delay (fleet),   unit: s,     ratio: {num: handover_delay_total_s, den: handover_count, using: sum}, better: lower}
+        # handoverDelay*: the EXTRA switch delay configured with handoverExecDelay / <rat>HandoverDelay (0 unless a
+        # scenario sets it, e.g. highway_dsrc_nr). What a switch really costs is switch_interruption_* below.
+        - {id: handover_delay_total_s, label: Configured extra switch delay (total), unit: s, module: manager,  scalar: handoverDelayTotal,    aggregate: [sum, mean],      headline: sum,  better: lower}
+        - {id: handover_delay_max_s,   label: Configured extra switch delay (worst), unit: s, module: manager,  scalar: handoverDelayMax,      aggregate: [max],            headline: max,  better: lower}
+        - {id: handover_delay_mean_s,  label: Configured extra switch delay (mean),  unit: s, ratio: {num: handover_delay_total_s, den: handover_count, using: sum}, better: lower}
         - {id: selection_share_dsrc,   label: Time on DSRC,                  unit: ratio, module: manager,  scalar: DSRC.selectionShare,   aggregate: [mean], headline: mean, better: none, availability: in_range_dsrc}
         - {id: selection_share_wifi,   label: Time on WiFi,                  unit: ratio, module: manager,  scalar: WIFI.selectionShare,   aggregate: [mean], headline: mean, better: none, availability: in_range_wifi}
-        - {id: selection_share_lte,    label: Time on LTE,                   unit: ratio, module: manager,  scalar: LTE.selectionShare,    aggregate: [mean], headline: mean, better: none, availability: in_range_lte}
         - {id: selection_share_nr,     label: Time on NR,                    unit: ratio, module: manager,  scalar: NR.selectionShare,     aggregate: [mean], headline: mean, better: none, availability: in_range_nr}
         - {id: selection_share_6g,     label: Time on 6G,                    unit: ratio, module: manager,  scalar: 6G.selectionShare,     aggregate: [mean], headline: mean, better: none}
         - {id: in_range_dsrc,          label: DSRC in range (time share),    unit: ratio, module: coverage, scalar: "dsrcInRange:timeavg", aggregate: [mean], headline: mean, better: none}
         - {id: in_range_wifi,          label: WiFi in range (time share),    unit: ratio, module: coverage, scalar: "wifiInRange:timeavg", aggregate: [mean], headline: mean, better: none}
-        - {id: in_range_lte,           label: LTE in range (time share),     unit: ratio, module: coverage, scalar: "lteInRange:timeavg",  aggregate: [mean], headline: mean, better: none}
         - {id: in_range_nr,            label: NR in range (time share),      unit: ratio, module: coverage, scalar: "nrInRange:timeavg",   aggregate: [mean], headline: mean, better: none}
         - {id: outage_ratio,           label: Outage ratio,                  unit: ratio, module: coverage, scalar: outageRatio,           aggregate: [mean, max],      headline: mean, better: lower}
         - {id: outage_time_total_s,    label: Outage time,                   unit: s,     module: coverage, scalar: outageTimeTotal,       aggregate: [mean, sum],      headline: mean, better: lower}
@@ -210,3 +213,20 @@ metrics:
         - {id: delay_count,            label: End-to-end delay (samples),    unit: count, module: server_app, statistic: "endToEndDelay:histogram", field: count, aggregate: [sum], headline: sum, better: none, hidden: true}
         - {id: delay_mean_s,           label: Mean end-to-end delay,         unit: s,     ratio: {num: delay_sum_s, den: delay_count, using: sum}, better: lower}
         - {id: delay_max_s,            label: Worst end-to-end delay,        unit: s,     module: server_app, statistic: "endToEndDelay:histogram", field: max, aggregate: [max], headline: max, better: lower}
+        # ---- what a switch really costs, measured at the server: time from the first packet sent on the new RAT
+        #      until the first one that arrives (safety class, server app[0])
+        - {id: switch_interruption_sum_s,   label: Switch interruption (total),   unit: s,     module: server_app, statistic: "switchInterruption:histogram", field: sum,   aggregate: [sum], headline: sum, better: none, hidden: true}
+        - {id: switch_interruption_count,   label: Switches measured,             unit: count, module: server_app, statistic: "switchInterruption:histogram", field: count, aggregate: [sum], headline: sum, better: none}
+        - {id: switch_interruption_mean_s,  label: Mean switch interruption,      unit: s,     ratio: {num: switch_interruption_sum_s, den: switch_interruption_count, using: sum}, better: lower}
+        - {id: switch_interruption_max_s,   label: Worst switch interruption,     unit: s,     module: server_app, statistic: "switchInterruption:histogram", field: max,   aggregate: [max], headline: max, better: lower}
+        # ---- infotainment, judged at the car: data packets the server sent on request (server -> car)
+        - {id: info_packets_expected,  label: Infotainment packets requested, unit: count, module: car_info, scalar: repliesExpected,       aggregate: [sum], headline: sum, better: none}
+        - {id: info_packets_received,  label: Infotainment packets received,  unit: count, module: car_info, scalar: repliesReceived,       aggregate: [sum], headline: sum, better: none}
+        - {id: info_packets_on_time,   label: Infotainment packets on time,   unit: count, module: car_info, scalar: repliesWithinDeadline, aggregate: [sum], headline: sum, better: none, hidden: true}
+        - {id: info_delivery_ratio,    label: Infotainment delivery ratio,    unit: ratio, ratio: {num: info_packets_received, den: info_packets_expected, using: sum}, better: higher}
+        - {id: info_on_time_ratio,     label: Infotainment on time,           unit: ratio, ratio: {num: info_packets_on_time,  den: info_packets_expected, using: sum}, better: higher}
+        # ---- what the cars' probes saw, per RAT (round trip, mean over vehicles)
+        - {id: probe_rtt_dsrc_ms,      label: Probe round trip on DSRC,       unit: ms,    module: car_probe, scalar: DSRC.probeRttMean, aggregate: [mean], headline: mean, better: lower}
+        - {id: probe_rtt_wifi_ms,      label: Probe round trip on WiFi,       unit: ms,    module: car_probe, scalar: WIFI.probeRttMean, aggregate: [mean], headline: mean, better: lower}
+        - {id: probe_rtt_nr_ms,        label: Probe round trip on NR,         unit: ms,    module: car_probe, scalar: NR.probeRttMean,   aggregate: [mean], headline: mean, better: lower}
+

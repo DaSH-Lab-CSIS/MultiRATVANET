@@ -16,7 +16,7 @@ import re
 import sys
 from datetime import datetime, timezone
 
-CACHE_VERSION = 7
+CACHE_VERSION = 8
 LOG_TAIL = 200
 BIN_STEPS = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500]
 MAX_POINTS = 120
@@ -26,6 +26,9 @@ RAT_SERIES = [("DSRC", "vehiclesDsrc"), ("WiFi", "vehiclesWifi"), ("NR", "vehicl
 RAT_SHARES = [("DSRC", "DSRC"), ("WiFi", "WIFI"), ("NR", "NR"), ("LTE", "LTE")]
 
 RE_CAR_APP = re.compile(r"\.car\[\d+\]\.app\[(\d+)\]$")
+CAR_REPLY_SCALARS = {"repliesExpected": "replies_expected", "repliesReceived": "replies_received",
+                     "repliesWithinDeadline": "replies_within", "replyDeadline": "reply_deadline_s",
+                     "replyReceived:sum(packetBytes)": "reply_bytes"}
 RE_SERVER_APP = re.compile(r"\.server\.app\[(\d+)\]$")
 RE_MANAGER = re.compile(r"\.car\[\d+\]\.multiRatAppManager$")
 RE_COVERAGE = re.compile(r"\.car\[\d+\]\.ratCoverageMonitor$")
@@ -117,6 +120,12 @@ def summarize(config, scalars, stats, sim_time):
             cls.setdefault(int(m.group(1)), {}).setdefault("sent", 0)
             cls[int(m.group(1))]["sent"] += v
             continue
+        if m and name in CAR_REPLY_SCALARS:
+            # request-and-reply traffic: what came back to the cars (summed over cars)
+            c = cls.setdefault(int(m.group(1)), {})
+            key = CAR_REPLY_SCALARS[name]
+            c[key] = v if key == "reply_deadline_s" else c.get(key, 0) + v
+            continue
         m = RE_SERVER_APP.search(mod)
         if m:
             c = cls.setdefault(int(m.group(1)), {})
@@ -143,6 +152,13 @@ def summarize(config, scalars, stats, sim_time):
 
     interruption = {"count": 0, "sum": 0.0, "max": None, "lost": 0.0}
     for (mod, name), fields in stats.items():
+        m = RE_CAR_APP.search(mod)
+        if m and name == "replyDelay:histogram" and fields.get("count"):
+            d = cls.setdefault(int(m.group(1)), {}).setdefault("reply_delay", {"count": 0, "sum": 0.0, "max": 0.0})
+            d["count"] += fields["count"]
+            d["sum"] += fields.get("sum") or 0
+            d["max"] = max(d["max"], fields.get("max") or 0)
+            continue
         m = RE_SERVER_APP.search(mod)
         if not m:
             continue
@@ -162,10 +178,29 @@ def summarize(config, scalars, stats, sim_time):
         c = cls[k]
         if not c.get("sent") or "received" not in c:
             continue  # e.g. V2V beacons: no server side
+        if c.get("reply_deadline_s") and c.get("replies_expected"):
+            # the heavy direction is server -> car (infotainment): judged at the car, on the
+            # reply packets, each counted from the sending of its request
+            d = c.get("reply_delay", {})
+            dc, ds = d.get("count"), d.get("sum")
+            classes.append({
+                "name": names.get(k, f"app[{k}]"),
+                "direction": "server to car",
+                "sent": c["replies_expected"],
+                "received": c.get("replies_received", 0),
+                "pdr": c.get("replies_received", 0) / c["replies_expected"],
+                "within_deadline": c.get("replies_within", 0) / c["replies_expected"],
+                "deadline_ms": c["reply_deadline_s"] * 1e3,
+                "throughput_mbps": c.get("reply_bytes", 0) * 8e-6 / sim_time if sim_time else None,
+                "delay_mean_ms": ds / dc * 1e3 if dc else None,
+                "delay_max_ms": d["max"] * 1e3 if dc else None,
+            })
+            continue
         d = c.get("delay", {})
         dc, ds = d.get("count"), d.get("sum")
         classes.append({
             "name": names.get(k, f"app[{k}]"),
+            "direction": "car to server",
             "sent": c["sent"],
             "received": c["received"],
             "pdr": c["received"] / c["sent"],
@@ -185,9 +220,11 @@ def summarize(config, scalars, stats, sim_time):
     if cellular_merged(config):
         shares = {"DSRC": shares["DSRC"], "WiFi": shares["WiFi"],
                   "Cellular": (shares["NR"] or 0) + (shares["LTE"] or 0)}
+    elif not lte_equipped(config):
+        shares.pop("LTE", None)
     inputs = {}
     for label, key in RAT_SHARES:
-        vals = {f: mean(f"{key}.inRange{f}") for f in ("SinrMargin", "Load", "Capacity", "Latency")}
+        vals = {f: mean(f"{key}.inRange{f}") for f in ("SinrMargin", "Load", "Capacity", "LinkRate", "Latency", "ProbeRtt")}
         if any(v is not None for v in vals.values()):
             inputs[label] = vals
     return {
@@ -278,8 +315,8 @@ def scenario_setup(config, pars, scalars, descr):
         "descriptions": list(dict.fromkeys(descr)),
         "launch": config.get("*.veinsManager.launchConfig"),
         "rats": rats,
-        "decision": {k: mgr.get(k) for k in ("policy", "decisionInterval", "decideOnlyOnCoverageChange", "handoverExecDelay",
-                                              "pingPongWindow", "startTime", "ensembleWeightCoverage", "ensembleWeightSinr",
+        "decision": {k: mgr.get(k) for k in ("policy", "decisionInterval", "handoverExecDelay",
+                                              "pingPongWindow", "startTime", "timeToTrigger", "ensembleWeightCoverage", "ensembleWeightSinr",
                                               "ensembleWeightLatency", "ensembleWeightLoad", "ensembleStickiness") if k in mgr},
         "traffic": traffic,
         "signal_model": {k: mon.get(k) for k in ("signalSource", "measurementMaxAge", "nrMinSinr", "lteMinSinr", "useDistance", "useSignal",
@@ -292,11 +329,16 @@ def scenario_setup(config, pars, scalars, descr):
     }
 
 
+def lte_equipped(config):
+    """False when the run switched LTE off (hasLte = false): cellular is then NR alone"""
+    return next((v for key, v in config.items() if key.endswith("ratCoverageMonitor.hasLte")), "true") != "false"
+
+
 def cellular_merged(config):
-    """lteInterface == nrInterface: the manager cannot tell LTE from NR; report them as one 'Cellular'"""
+    """LTE equipped and lteInterface == nrInterface: the manager cannot tell LTE from NR; report them as one 'Cellular'"""
     get = lambda k: next((v for key, v in config.items() if key.endswith("multiRatAppManager." + k)), None)
     lte, nr = get("lteInterface"), get("nrInterface")
-    return lte is not None and lte == nr
+    return lte_equipped(config) and lte is not None and lte == nr
 
 
 def read_vec(path, merged, names):
@@ -739,7 +781,7 @@ function renderRun(r) {
     const tiles = el("div", { class: "tiles" });
     if (classes.length > 1) {
       for (const c of classes) {
-        tiles.append(tile(pct(c.pdr), `${c.name}: delivered`, `${fmt(c.received, 0)} of ${fmt(c.sent, 0)} packets`));
+        tiles.append(tile(pct(c.pdr), `${c.name}: delivered`, `${fmt(c.received, 0)} of ${fmt(c.sent, 0)} packets` + (c.direction ? `, ${c.direction}` : "")));
         if (c.within_deadline != null)
           tiles.append(tile(pct(c.within_deadline), `${c.name}: on time`, `sent and arrived within ${fmt(c.deadline_ms, 0)} ms`));
         tiles.append(tile(fmt(c.delay_mean_ms, 1), `${c.name}: mean delay`, c.delay_max_ms != null ? `worst ${fmt(c.delay_max_ms, 0)} ms` : null, "ms"));
@@ -768,9 +810,9 @@ function renderRun(r) {
     root.append(share);
     if (s.inputs && Object.keys(s.inputs).length) {
       const inp = el("div", { class: "card", style: "margin-top:10px" }, el("h3", { text: "What the policies saw (average while each RAT was in range)" }));
-      inp.append(simpleTable(["RAT", "SINR margin", "Load", "Capacity", "Latency estimate"],
+      inp.append(simpleTable(["RAT", "SINR margin", "Load (sensed)", "Link rate", "Probe round trip"],
         Object.entries(s.inputs).map(([k, v]) => [k, v.SinrMargin != null ? fmt(v.SinrMargin, 1) + " dB" : null, v.Load != null ? pct(v.Load) : null,
-                                                 v.Capacity != null ? fmt(v.Capacity, 1) + " Mbit/s" : null, v.Latency != null ? fmt(v.Latency, 2) + " ms" : null]), [1, 2, 3, 4]));
+                                                 v.LinkRate != null ? fmt(v.LinkRate, 1) + " Mbit/s" : (v.Capacity != null ? fmt(v.Capacity, 1) + " Mbit/s (capacity)" : null), v.ProbeRtt != null ? fmt(v.ProbeRtt, 2) + " ms" : (v.Latency != null ? fmt(v.Latency, 2) + " ms (estimate)" : null)]), [1, 2, 3, 4]));
       root.append(inp);
     }
   } else {
@@ -849,7 +891,9 @@ function renderSetup(r) {
                      measured ? (cell(x) ? `measured SINR ≥ ${x.min_sinr}` : `beacon ≥ ${x.rssi_threshold}`) : `estimate ≥ ${x.rssi_threshold}`,
                      x.latency_ms != null ? x.latency_ms + " ms" : null,
                      x.capacity_mbps != null ? x.capacity_mbps + " Mbit/s" : null, x.interface])));
-  infra.append(el("p", { class: "note", text: "Latency and capacity are fixed numbers the policies are told, not measured." }));
+  infra.append(el("p", { class: "note", text: measured
+    ? "Policies are given only what the car itself observes: signal, sensed channel load (DSRC/WiFi), link rate, and the round trip and loss of its own probes."
+    : "Latency and capacity are fixed numbers the policies are told, not measured." }));
   out.push(infra);
 
   const g = el("div", { class: "grid2", style: "margin-top:12px" });
@@ -857,7 +901,7 @@ function renderSetup(r) {
   right.append(el("h3", { text: "How cars choose" }));
   const d = u.decision, ens = (d.policy || "").includes("Ensemble");
   right.append(kvList([["Policy", d.policy], ["Re-decides every", d.decisionInterval], ["First decision at", d.startTime],
-    ["Switch takes", d.handoverExecDelay], ["Ping-pong window", d.pingPongWindow],
+    ["Better RAT must hold for", d.timeToTrigger], ["Extra switch delay", d.handoverExecDelay], ["Ping-pong window", d.pingPongWindow],
     ...(ens ? [["Ensemble weights", `coverage ${d.ensembleWeightCoverage}, signal ${d.ensembleWeightSinr}, latency ${d.ensembleWeightLatency}, load ${d.ensembleWeightLoad}`],
                ["Stickiness", d.ensembleStickiness]] : [])]));
   const sm = u.signal_model;
@@ -867,6 +911,7 @@ function renderSetup(r) {
   right2.append(kvList(measured ? [
       ["DSRC / WiFi", "received power and SNIR of beacons from RSUs / APs (other cars' frames ignored)"],
       ["NR / LTE", "downlink SINR of the serving cell, measured by Simu5G"],
+      ["Probes", "the car probes every linked RAT; the server echoes; a RAT is usable only while echoes come back"],
       ["Refreshed every", sm.updateInterval], ["Counts as lost after", sm.measurementMaxAge + " without a measurement"]]
     : [["Model", `distance to nearest tower: ${sm.txPowerDbm} dBm − ${sm.referenceLossDb} dB − 10·${sm.pathLossExponent}·log10(d)`],
        ["Refreshed every", sm.updateInterval], ["In range needs", [sm.useDistance === "true" ? "within range" : null, sm.useSignal === "true" ? "above min RSSI" : null].filter(Boolean).join(" and ")],
