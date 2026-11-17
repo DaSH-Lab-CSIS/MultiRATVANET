@@ -285,6 +285,10 @@ PolicyResponse decide(const PolicyRequest &req) override {
 
    or add a config to `simulations/omnetpp.ini` that sets `*.car[*].multiRatAppManager.policy`.
 
+5. Compare it with the others: add it to `dash/run-experiment.sh` (`--policy`) and run the test
+   bench with it, `bench/run.sh --only "my_policy sinr only_dsrc only_wifi only_nr"`
+   ([bench/README.md](../bench/README.md)).
+
 **Parameters.** To make a value configurable, add a parameter to `MultiRatAppManager.ned`, a field
 to `PolicyParams` (`IRatSelectionPolicy.h`), read it where the manager fills `PolicyParams`
 (`MultiRatAppManager.cc`), and pass it to the constructor in the factory. `timeToTrigger`,
@@ -309,6 +313,11 @@ They use `connection.currentRat` and `rats` only, and put every traffic class on
 | `Load` | Lowest sensed `load` among DSRC and WiFi; another RAT must be lower by `loadSwitchMargin` (0.15). A RAT without a load figure (NR) is used only when neither is usable. | `load` |
 | `Ensemble` | Weighted vote of the four above (`ensembleWeight*`); the leader must beat the current RAT by more than `ensembleStickiness` votes. Time-to-trigger is applied to the outcome of the vote. | all of the above |
 | `Ml` | The RAT last passed to `MlPolicy::suggest()` if usable, else as CoveragePriority. Nothing calls `suggest()` yet. | |
+
+**Baselines.** `OnlyDsrc`, `OnlyWifi` and `OnlyNr` (`SingleRatPolicy.h`) use one RAT and never
+another: they ask for it whenever it is usable and otherwise answer `NONE`, so a car stays on it
+even out of range. The test bench ([bench/README.md](../bench/README.md)) compares the policies
+with them.
 
 To write a policy the same way, derive from `TimeToTriggerPolicy` and implement `prefer()` and
 `name()`; `SinrPolicy.h` is the shortest example.

@@ -64,7 +64,7 @@ void MultiRatAppManager::initialize(int stage)
         pp.maxLatencyMs = par("latencyBudget").doubleValue() * 1e3;
         policy_ = RatPolicyFactory::create(par("policy").stdstringValue(), pp);
         if (!policy_)
-            throw cRuntimeError("Unknown policy \"%s\" (CoveragePriority, Sinr, LatencyQos, Load, Ml, Ensemble or ExampleSplit)",
+            throw cRuntimeError("Unknown policy \"%s\" (CoveragePriority, Sinr, LatencyQos, Load, Ml, Ensemble, ExampleSplit, OnlyDsrc, OnlyWifi or OnlyNr)",
                     par("policy").stringValue());
         if (auto *ens = dynamic_cast<EnsemblePolicy *>(policy_.get())) {
             ens->setWeights(par("ensembleWeightCoverage").doubleValue(),

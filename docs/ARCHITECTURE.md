@@ -90,6 +90,10 @@ once, to the outcome of the vote. `ensembleWeightCoverage/Sinr/Latency/Load` set
 `Ml` is a hook. Nothing in this repository calls `suggest()`, so on its own it decides like
 CoveragePriority.
 
+`OnlyDsrc`, `OnlyWifi` and `OnlyNr` are baselines, not policies: the car uses that one RAT and
+nothing else. The test bench (`bench/run.sh`, [bench/README.md](../bench/README.md)) runs the five
+policies other than `Ml` and the three baselines with the same seeds and compares them.
+
 The built-in policies put every traffic class on the same RAT. `ExampleSplit` is a template that
 shows the standard interface used directly and a RAT per class (safety on DSRC/WiFi,
 infotainment on NR); it is not one of the policies being compared.

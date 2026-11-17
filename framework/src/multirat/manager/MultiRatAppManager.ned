@@ -29,7 +29,7 @@ simple MultiRatAppManager
         string routingTableModule = default("^.ipv4.routingTable");
         string interfaceTableModule = default("^.interfaceTable");
 
-        string policy = default("CoveragePriority"); // CoveragePriority|Sinr|LatencyQos|Load|Ml|Ensemble|ExampleSplit
+        string policy = default("CoveragePriority"); // CoveragePriority|Sinr|LatencyQos|Load|Ml|Ensemble|ExampleSplit; baselines OnlyDsrc|OnlyWifi|OnlyNr
         double decisionInterval @unit(s) = default(0.5s);
         // Scenario setting, not a policy tool: extra delay before the route moves, for signalling
         // the stacks do not simulate (e.g. IP mobility). 0 = the switch costs only what the

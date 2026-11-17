@@ -9,6 +9,7 @@
 # Experiment
 #   --scenario S            highway (default) | highway_dsrc_nr | highway_v2v | highway_cv2x | urbangrid | electroniccity
 #   --policy P              coverage_priority (default) | sinr | latency_qos | load | ml | ensemble | example_split
+#                           baselines (one RAT only): only_dsrc | only_wifi | only_nr
 #   --config NAME           use this omnetpp.ini config directly (overrides --scenario/--policy mapping)
 #   --time T                simulated time, e.g. 120s (default: the scenario's default)
 #   --seed N                OMNeT++ seed set (default 0)
@@ -40,7 +41,7 @@ REPORT=1 DRY=0
 PARAMS=()     # "label=value" for the run record
 OVERRIDES=()  # --<ini-key>=<value> passed to the simulation
 
-usage() { sed -n '2,31p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+usage() { sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 die() { echo "error: $*" >&2; exit 2; }
 
 # param FLAG-LABEL INI-KEY TYPE VALUE
@@ -104,6 +105,7 @@ esac
 case $POLICY in
     coverage_priority) pol=CoveragePriority ;; sinr) pol=Sinr ;; latency_qos) pol=LatencyQos ;;
     load) pol=Load ;; ml) pol=Ml ;; ensemble) pol=Ensemble ;; example_split) pol=ExampleSplit ;;
+    only_dsrc) pol=OnlyDsrc ;; only_wifi) pol=OnlyWifi ;; only_nr) pol=OnlyNr ;;
     *) die "unknown policy $POLICY" ;;
 esac
 
@@ -111,7 +113,7 @@ esac
 # from the scenario's base config plus a policy override
 if [ -z "$CONFIG" ]; then
     case "$SCENARIO/$POLICY" in
-        highway/example_split)           CONFIG=$base; OVERRIDES=("--$M.policy=\"$pol\"" "${OVERRIDES[@]}") ;;
+        highway/example_split|highway/only_*) CONFIG=$base; OVERRIDES=("--$M.policy=\"$pol\"" "${OVERRIDES[@]}") ;;
         highway/*)                       CONFIG=$pol ;;
         highway_dsrc_nr/coverage_priority) CONFIG=DsrcNrHandover ;;
         urbangrid/coverage_priority)     CONFIG=UrbanGrid_CoveragePriority ;;
