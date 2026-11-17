@@ -38,9 +38,12 @@ network MultiRatHighway extends Highway
         dsrcRsu[numDsrcRsus]: DsrcRsu {
             @display("p=250,420;is=n");
         }
-        // Distribution network of all APs and RSUs: one LAN behind one router port.
-        wlanSwitch: EthernetSwitch {
-            @display("p=150,240;is=s");
+        // Distribution networks: one LAN per RAT, each behind its own router port.
+        dsrcSwitch: EthernetSwitch {
+            @display("p=150,300;is=s");
+        }
+        wifiSwitch: EthernetSwitch {
+            @display("p=150,180;is=s");
         }
         // Network-wide periodic (0.1s) RAT statistics: vehicles-per-RAT + avg RSSI.
         ratStatsCollector: RatStatsCollector {
@@ -48,16 +51,19 @@ network MultiRatHighway extends Highway
         }
 
     connections allowunconnected:
-        // Backhaul: every AP/RSU sits on one switched LAN with a single uplink to the core
-        // router, so the server is reachable via cellular (UPF) and via WiFi/DSRC. One LAN means
-        // one gateway MAC: a car that moves between APs/RSUs, or between DSRC and WiFi, keeps a
-        // valid ARP entry. (With one router port per AP/RSU, frames to the old port's MAC were
-        // dropped by the router.)
-        wlanSwitch.ethg++ <--> Eth10G <--> router.ethg++;
+        // Backhaul: the RSUs sit on one switched LAN and the APs on another, each with its own
+        // uplink to the core router, so the server is reachable via cellular (UPF), via DSRC and
+        // via WiFi, and its replies come back the same way. One LAN per RAT means one gateway per
+        // RAT: a car that moves between RSUs (or between APs) keeps a valid ARP entry, and the
+        // router's ARP for a car's DSRC address is heard on DSRC only. (On a single shared LAN a
+        // car answered it from whichever of its two radios heard it, and replies came back on the
+        // wrong RAT.) The order matters: DSRC is the router's eth0, WiFi its eth1 (router.mrt, omnetpp.ini).
+        dsrcSwitch.ethg++ <--> Eth10G <--> router.ethg++;
+        wifiSwitch.ethg++ <--> Eth10G <--> router.ethg++;
         for i=0..numWifiAps-1 {
-            wifiAp[i].ethg++ <--> Eth10G <--> wlanSwitch.ethg++;
+            wifiAp[i].ethg++ <--> Eth10G <--> wifiSwitch.ethg++;
         }
         for i=0..numDsrcRsus-1 {
-            dsrcRsu[i].ethg++ <--> Eth10G <--> wlanSwitch.ethg++;
+            dsrcRsu[i].ethg++ <--> Eth10G <--> dsrcSwitch.ethg++;
         }
 }
