@@ -210,8 +210,26 @@ def summarize(config, scalars, stats, sim_time):
             interruption["sum"] += fields.get("sum") or 0
             if fields.get("max") is not None:
                 interruption["max"] = max(interruption["max"] or 0, fields["max"])
+            c["gap"] = fields
         elif name == "switchLoss:histogram" and fields.get("count"):
             interruption["lost"] += fields.get("sum") or 0
+            c["switch_lost"] = fields.get("sum") or 0
+
+    # time cars were attached to some RAT (s), for switch rates
+    attached_s = sum(v for c in per_car.values() for key, v in c.items() if key.endswith(".residencyTime"))
+
+    def class_extra(c, name):
+        """the key metrics every class shows: loss, switching of this class and its switch gap"""
+        g = c.get("gap") or {}
+        switches = total(f"{name}.switches") if any(f"{name}.switches" in x for x in per_car.values()) else None
+        return {
+            "switches_per_car": switches / n if switches is not None and n else None,
+            "switches_per_min": switches / attached_s * 60 if switches is not None and attached_s else None,
+            "gap_count": g.get("count") or 0,
+            "gap_mean_ms": g["sum"] / g["count"] * 1e3 if g.get("count") else None,
+            "gap_max_ms": g["max"] * 1e3 if g.get("count") and g.get("max") is not None else None,
+            "switch_lost": c.get("switch_lost", 0),
+        }
 
     classes = []
     for k in sorted(cls):
@@ -234,6 +252,7 @@ def summarize(config, scalars, stats, sim_time):
                 "throughput_mbps": c.get("reply_bytes", 0) * 8e-6 / sim_time if sim_time else None,
                 "delay_mean_ms": ds / dc * 1e3 if dc else None,
                 "delay_max_ms": d["max"] * 1e3 if dc else None,
+                **class_extra(c, names.get(k, f"app[{k}]")),
             })
             continue
         d = c.get("delay", {})
@@ -249,6 +268,7 @@ def summarize(config, scalars, stats, sim_time):
             "throughput_mbps": c.get("bytes", 0) * 8e-6 / sim_time if sim_time else None,
             "delay_mean_ms": ds / dc * 1e3 if dc else None,
             "delay_max_ms": d["max"] * 1e3 if d.get("max") is not None and dc else None,
+            **class_extra(c, names.get(k, f"app[{k}]")),
         })
     sent = sum(c["sent"] for c in classes)
     rcvd = sum(c["received"] for c in classes)
@@ -280,6 +300,7 @@ def summarize(config, scalars, stats, sim_time):
         "handovers_per_vehicle": total("handoversTotal") / n if n else None,
         "handovers_failed": total("handoverFailed:count"),
         "ping_pong": total("pingPongTotal"),
+        "ping_pong_rate": total("pingPongTotal") / total("handoversTotal") if total("handoversTotal") else None,
         "connectivity": mean("connectivityRatio"),
         "outage_s": total("outageTimeTotal"),
         "interruption_count": interruption["count"],
@@ -1287,6 +1308,13 @@ body.bench .picker, body.bench nav, body.bench #s-history, body.bench #run { dis
 .filters { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 0 0 10px; }
 .filters select { max-width: 100%; }
 td.best { font-weight: 600; }
+/* key metrics */
+table.keytable th[scope=row] { text-align: left; font-weight: 600; white-space: nowrap; }
+table.keytable td.kv b { font-size: 17px; font-variant-numeric: tabular-nums; }
+table.keytable .kd { color: var(--text-muted); font-size: 12px; margin-top: 2px; }
+table.keytable td.kw { color: var(--text-secondary); font-size: 13px; min-width: 220px; }
+table.keytable th.grp { text-align: center; border-bottom: 1px solid var(--border); }
+table.keytable th.sub { font-weight: 400; color: var(--text-secondary); }
 #cmp-table tbody tr { cursor: pointer; }
 #cmp-table tbody tr:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 tr.base td:first-child { color: var(--text-secondary); }
@@ -1299,7 +1327,7 @@ tr.base td:first-child { color: var(--text-secondary); }
     <h1>MultiRATVANET</h1>
     <div class="picker"><label for="pick" class="muted">Run</label><select id="pick"></select><span id="status" class="pill"></span></div>
   </div>
-  <nav class="wrap"><a href="#s-compare" id="nav-compare" hidden>Compare</a><a href="#s-run">Run</a><a href="#s-map">Map</a><a href="#s-policy">Policy</a><a href="#s-network">Network</a><a href="#s-results">Results</a><a href="#s-history">History</a></nav>
+  <nav class="wrap"><a href="#s-compare" id="nav-compare" hidden>Compare</a><a href="#s-run">Run</a><a href="#s-key">Key metrics</a><a href="#s-map">Map</a><a href="#s-policy">Policy</a><a href="#s-network">Network</a><a href="#s-results">Results</a><a href="#s-history">History</a></nav>
 </header>
 <main class="wrap">
   <section id="s-compare" hidden></section>
@@ -1805,6 +1833,69 @@ function renderNetworkSection(r) {
   return sec;
 }
 
+// ------------------------------------------------------------------ key metrics
+// The eight metrics every report leads with. Per traffic class where the data allows (cls), per car
+// otherwise (car): ping-pongs and availability belong to the car, whatever its traffic.
+const KEY = [
+  { id: "delay", title: "Average latency", kind: "ms", better: "low", cls: c => c.delay_mean_ms,
+    what: "end-to-end delay of the packets that arrived (safety: car to server; infotainment: request to each reply)",
+    detail: c => c.delay_max_ms != null ? `worst ${fmt(c.delay_max_ms, 0)} ms` : null },
+  { id: "pdr", title: "Packet delivery ratio", kind: "pct", better: "high", cls: c => c.pdr,
+    what: "share of the packets sent that arrived", detail: c => `${fmt(c.received, 0)} of ${fmt(c.sent, 0)}` },
+  { id: "thr", title: "Throughput", kind: "mbps", better: "high", cls: c => c.throughput_mbps,
+    what: "data delivered per second, all cars together" },
+  { id: "loss", title: "Packet loss", kind: "pct", better: "low", cls: c => c.pdr == null ? null : 1 - c.pdr,
+    what: "share of the packets sent that never arrived (1 − PDR)", detail: c => `${fmt(c.sent - c.received, 0)} lost` },
+  { id: "hof", title: "Handover frequency", kind: "rate", better: "low", cls: c => c.switches_per_min,
+    what: "RAT switches of this traffic, per car and minute attached",
+    detail: c => c.switches_per_car != null ? `${fmt(c.switches_per_car, 1)} per car in the run` : null },
+  { id: "gap", title: "Handover interruption", kind: "ms", better: "low", cls: c => c.gap_mean_ms,
+    what: "after a switch: from the first packet sent on the new RAT until the first one arrives",
+    detail: c => c.gap_count ? `worst ${fmt(c.gap_max_ms, 0)} ms; ${fmt(c.switch_lost, 0)} packets lost while switching` : "no switches measured" },
+  { id: "ppr", title: "Ping-pong rate", kind: "pct", better: "low", car: s => s.ping_pong_rate,
+    what: "share of switches that went back to the previous RAT within 2 s (the car's RAT, all traffic)",
+    detail: s => `${fmt(s.ping_pong, 0)} of ${fmt(s.handovers, 0)} switches` },
+  { id: "avail", title: "Network availability", kind: "pct", better: "high", car: s => s.connectivity,
+    what: "share of the time a car had at least one usable RAT (the car, all traffic)",
+    detail: s => `${fmt(s.outage_s, 1)} s without one, all cars together` },
+];
+const KEY_CLASSES = [["safety", "Safety"], ["info", "Infotainment"]];
+const classKey = name => name === "safety" ? "safety" : name === "infotainment" ? "info" : null;
+// metric keys of one run: k_<id>_safety, k_<id>_info, or k_<id> for the per-car ones
+function keyValues(s) {
+  const out = {};
+  for (const k of KEY) {
+    if (k.car) { out["k_" + k.id] = k.car(s); continue; }
+    for (const c of s.classes || []) { const ck = classKey(c.name); if (ck) out[`k_${k.id}_${ck}`] = k.cls(c); }
+  }
+  return out;
+}
+const keyFmt = (v, kind) => v == null || !isFinite(v) ? "–" : kind === "pct" ? (v * 100).toFixed(v < 0.1 && v > 0 ? 2 : 1) + "%" : kind === "ms" ? fmt(v, 1) + " ms"
+  : kind === "mbps" ? fmt(v, v < 1 ? 3 : 2) + " Mbit/s" : kind === "rate" ? fmt(v, 2) + " /min" : fmt(v, 2);
+
+// Run page: one table, metric by traffic class
+function renderKeySection(r) {
+  const s = r.summary;
+  const sec = section("s-key", "Key metrics", "The eight numbers to compare runs by, for each traffic class. Ping-pongs and availability belong to the car, so they are one number for both.");
+  if (!s) { sec.append(el("div", { class: "card empty", text: "This run produced no result files." })); return sec; }
+  const classes = KEY_CLASSES.map(([k, label]) => [k, label, (s.classes || []).find(c => classKey(c.name) === k)]).filter(x => x[2]);
+  const t = el("table", { class: "keytable" });
+  t.append(el("thead", {}, el("tr", {}, el("th", { text: "Metric" }), ...classes.map(([, label]) => el("th", { class: "n", text: label })),
+                                    el("th", { text: "What it measures" }))));
+  const b = el("tbody");
+  for (const k of KEY) {
+    const cells = k.car
+      ? [el("td", { class: "n kv", colspan: String(classes.length || 1) }, el("b", { text: keyFmt(k.car(s), k.kind) }),
+            k.detail ? el("div", { class: "kd", text: k.detail(s) || "" }) : null)]
+      : classes.map(([, , c]) => el("td", { class: "n kv" }, el("b", { text: keyFmt(k.cls(c), k.kind) }),
+            k.detail ? el("div", { class: "kd", text: k.detail(c) || "" }) : null));
+    b.append(el("tr", {}, el("th", { scope: "row", text: k.title }), ...cells, el("td", { class: "kw", text: k.what })));
+  }
+  t.append(b);
+  sec.append(el("div", { class: "card" }, el("div", { class: "scroll" }, t)));
+  return sec;
+}
+
 // ------------------------------------------------------------------ results
 function stat(v, lbl, detail, unit) {
   return el("div", { class: "stat" }, el("div", { class: "v", text: v }, unit && v !== "–" ? el("small", { text: unit }) : null),
@@ -1976,7 +2067,7 @@ function renderRun(r) {
     if (r.log) root.append(el("pre", { class: "log", text: r.log }));
     return;
   }
-  root.append(renderRunMeta(r));
+  root.append(renderRunMeta(r), renderKeySection(r));
   const map = renderMapSection(r);
   root.append(map.sec);
   root.append(renderPolicySection(r), renderNetworkSection(r), renderResultsSection(r));
@@ -2033,9 +2124,9 @@ const CMP_METRICS = [
 ];
 // the test bench page shows these too
 const BENCH_METRICS = {
-  traffic: ["safety_pdr", "safety_on_time", "info_pdr", "info_on_time", "safety_delay", "info_delay", "safety_delay_max", "info_delay_max"],
-  coverage: ["conn", "outage"],
-  switching: ["ho", "pingpong", "gap", "gap_max", "lost", "failed"],
+  traffic: ["safety_on_time", "info_on_time", "safety_delay_max", "info_delay_max"],
+  coverage: ["outage"],
+  switching: ["ho", "pingpong", "gap_max", "lost", "failed"],
 };
 const EXTRA_METRICS = [
   ["safety_delay_max", "Safety worst delay", "ms", "low"],
@@ -2062,7 +2153,7 @@ function runMetrics(r) {
   const D = r.decisions;
   if (D && D.count) for (const [b, n] of Object.entries(D.branches || {})) out["br_" + (b || "other")] = n / D.count;
   for (const [k, v] of Object.entries(s.shares || {})) out["share_" + k] = v;
-  return out;
+  return Object.assign(out, keyValues(s));
 }
 
 function stats(vals) {
@@ -2104,7 +2195,7 @@ function comparisonGroups() {
   return out.sort((a, b) => b.latest.localeCompare(a.latest));
 }
 
-const cmpFmt = (v, kind) => v == null ? "–" : kind === "pct" ? (v * 100).toFixed(1) + "%" : kind === "ms" ? fmt(v, 1) + " ms" : kind === "s" ? fmt(v, 1) + " s" : fmt(v, 2);
+const cmpFmt = (v, kind) => v == null ? "–" : kind === "pct" || kind === "ms" || kind === "mbps" || kind === "rate" ? keyFmt(v, kind) : kind === "s" ? fmt(v, 1) + " s" : fmt(v, 2);
 
 // Horizontal bars, one per policy, with a whisker for the spread across seeds. Policies in the accent
 // colour, baselines in neutral grey; a dashed line separates the two.
@@ -2122,7 +2213,8 @@ function hbarChart(title, better, rows, key, kind) {
   const W = Math.max(300, Math.min(560, avail >= 1066 ? (avail - 12) / 2 - 34 : avail - 34));
   const rowH = 26, m = { l: 118, r: 70, t: 4, b: 22 }, H = m.t + m.b + rowH * rows.length;
   const iw = W - m.l - m.r;
-  const xMax = kind === "pct" ? 1 : niceMax(Math.max(...data.map(d => d.s.m + d.s.sd)));
+  const top = Math.max(...data.map(d => d.s.m + d.s.sd));
+  const xMax = kind === "pct" && (better === "high" || top > 0.5) ? 1 : kind === "pct" ? Math.min(1, niceMax(top || 0.01)) : niceMax(top);
   const x = v => m.l + Math.max(0, v) / xMax * iw;
   const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": title });
   const ax = svgEl("g", { class: "axis" });
@@ -2130,7 +2222,7 @@ function hbarChart(title, better, rows, key, kind) {
     const v = xMax * i / 4;
     ax.append(svgEl("line", { class: i ? "gridline" : "baseline", x1: x(v), x2: x(v), y1: m.t, y2: H - m.b }));
     const tx = svgEl("text", { x: x(v), y: H - 6, "text-anchor": i === 0 ? "start" : i === 4 ? "end" : "middle" });
-    tx.textContent = kind === "pct" ? (v * 100).toFixed(0) + "%" : fmt(v, 2); ax.append(tx);
+    tx.textContent = kind === "pct" ? (v * 100).toFixed(xMax < 0.2 ? 1 : 0) + "%" : fmt(v, 2); ax.append(tx);
   }
   svg.append(ax);
   const tip = el("div", { class: "tip", hidden: "" });
@@ -2152,7 +2244,7 @@ function hbarChart(title, better, rows, key, kind) {
                  svgEl("line", { class: "whisk", x1: a, x2: a, y1: cy - 4, y2: cy + 4 }),
                  svgEl("line", { class: "whisk", x1: b, x2: b, y1: cy - 4, y2: cy + 4 }));
     }
-    const val = svgEl("text", { class: "val", x: Math.max(x1, x(s.m + s.sd)) + 6, y: cy + 4 });
+    const val = svgEl("text", { class: "val", x: Math.min(W - 4, Math.max(x1, x(s.m + s.sd)) + 6), y: cy + 4, "text-anchor": Math.max(x1, x(s.m + s.sd)) + 6 > W - m.r ? "end" : "start" });
     val.textContent = cmpFmt(s.m, kind); svg.append(val);
     const hit = svgEl("rect", { class: "hit", x: 0, y: y0, width: W, height: rowH });
     hit.addEventListener("pointerenter", () => {
@@ -2318,6 +2410,49 @@ function branchChart(rows) {
   return card;
 }
 
+// Key metrics per policy: mean ± spread across seeds, a column per traffic class
+function keyTable(rows) {
+  const t = el("table", { class: "keytable" });
+  const cols = KEY.flatMap(k => k.car ? [[k, "k_" + k.id, "All traffic"]] : KEY_CLASSES.map(([ck, label]) => [k, `k_${k.id}_${ck}`, label]))
+                  .filter(([, key]) => rows.some(r => r[key]));
+  const groups = [];
+  for (const [k] of cols) if (!groups.length || groups[groups.length - 1][0] !== k) groups.push([k, 1]); else groups[groups.length - 1][1]++;
+  t.append(el("thead", {},
+    el("tr", {}, el("th", { rowspan: "2", text: "Policy" }), ...groups.map(([k, n]) => el("th", { class: "grp", colspan: String(n), text: k.title, title: k.what }))),
+    el("tr", {}, ...cols.map(([, , label]) => el("th", { class: "n sub", text: label })))));
+  const best = {};
+  for (const [k, key] of cols) {
+    const v = rows.filter(r => !isBaseline(r.policy) && r[key]).map(r => r[key].m);
+    if (v.length > 1) best[key] = k.better === "high" ? Math.max(...v) : Math.min(...v);
+  }
+  const b = el("tbody");
+  for (const r of rows)
+    b.append(el("tr", { class: isBaseline(r.policy) ? "base" : "" }, el("td", { text: policyLabel(r.policy) + (isBaseline(r.policy) ? " (baseline)" : "") }),
+      ...cols.map(([k, key]) => {
+        const s = r[key];
+        const td = el("td", { class: "n", text: s ? keyFmt(s.m, k.kind) + (s.n > 1 && s.sd ? ` ±${k.kind === "pct" ? (s.sd * 100).toFixed(1) : fmt(s.sd, k.kind === "ms" ? 1 : k.kind === "mbps" && s.m < 1 ? 3 : 2)}` : "") : "–" });
+        if (s && best[key] != null && !isBaseline(r.policy) && s.m === best[key]) td.classList.add("best");
+        return td;
+      })));
+  t.append(b);
+  return el("div", { class: "scroll" }, t);
+}
+
+function keyCharts(rows) {
+  const grid = el("div", { class: "grid2" });
+  for (const k of KEY) {
+    if (k.car) { if (rows.some(r => r["k_" + k.id])) grid.append(hbarChart(k.title, k.better, rows, "k_" + k.id, k.kind)); continue; }
+    for (const [ck, label] of KEY_CLASSES)
+      if (rows.some(r => r[`k_${k.id}_${ck}`])) grid.append(hbarChart(`${k.title}: ${label}`, k.better, rows, `k_${k.id}_${ck}`, k.kind));
+  }
+  return grid;
+}
+
+function keyLegend() {
+  return el("details", { class: "card", style: "margin-top:12px" }, el("summary", { text: "What each metric measures" }),
+    kvList(KEY.map(k => [k.title, k.what])));
+}
+
 // Every run of the bench, one row per (policy, seed)
 function runsTable(g) {
   const cols = [["safety_pdr", "Safety delivered", "pct"], ["safety_on_time", "Safety on time", "pct"], ["info_pdr", "Infot. delivered", "pct"],
@@ -2381,9 +2516,15 @@ function renderBench(groups, g) {
     }
     root.append(grid);
   };
-  part("Did the traffic get through", "Policies in blue, one-RAT baselines in grey. Hover a bar for its value and spread.", BENCH_METRICS.traffic);
-  part("Coverage", "How often cars had a RAT they could use at all.", BENCH_METRICS.coverage);
-  part("Switching", "How often cars changed RAT and what each change cost.", BENCH_METRICS.switching);
+  root.append(el("h2", { text: "Key metrics" }));
+  root.append(el("p", { class: "sub", text: "The eight numbers to compare policies by, for safety and infotainment separately (ping-pongs and availability belong to the car). " +
+    "Mean over the seeds, ± the standard deviation across seeds; bold is the best policy, baselines excluded." }));
+  root.append(el("div", { class: "card" }, keyTable(g.policies)), keyLegend());
+  root.append(el("p", { class: "note", style: "margin:14px 0 10px", text: "Policies in blue, one-RAT baselines in grey. Hover a bar for its value and spread." }));
+  root.append(keyCharts(g.policies));
+  part("More detail: traffic", "Deadlines and the worst delays.", BENCH_METRICS.traffic);
+  part("More detail: coverage", "Time cars had no RAT they could use.", BENCH_METRICS.coverage);
+  part("More detail: switching", "Counts behind the switching metrics.", BENCH_METRICS.switching);
   root.append(el("h2", { text: "How the policies chose" }));
   root.append(shareChart(g.policies));
   const bc = branchChart(g.policies); bc.style.marginTop = "12px"; root.append(bc);
@@ -2408,11 +2549,9 @@ function renderCompare(groups, g) {
   root.append(el("p", { class: "sub", text: `Same scenario, length, image and parameters; each policy averaged over seeds ${seeds.join(", ")} ` +
     `(bars: mean, whisker: ± standard deviation across seeds). A difference smaller than the whiskers is not a difference.` +
     (g.params.length ? ` Parameters changed for these runs: ${g.params.join(", ")}.` : "") }));
-  const grid = el("div", { class: "grid2" });
-  for (const [k, title, kind, better] of CMP_METRICS)
-    if (g.policies.some(p => p[k])) grid.append(hbarChart(title, better, g.policies, k, kind));
-  root.append(el("p", { class: "note", style: "margin:0 0 10px", text: "Policies in blue, one-RAT baselines in grey. Hover a bar for its value and spread." }));
-  root.append(grid);
+  root.append(el("div", { class: "card" }, el("h3", { text: "Key metrics (mean ± standard deviation across seeds; bold: best policy, baselines excluded)" }), keyTable(g.policies)), keyLegend());
+  root.append(el("p", { class: "note", style: "margin:14px 0 10px", text: "Policies in blue, one-RAT baselines in grey. Hover a bar for its value and spread." }));
+  root.append(keyCharts(g.policies));
   const sh = shareChart(g.policies); sh.style.marginTop = "12px"; root.append(sh);
   root.append(el("div", { class: "card", style: "margin-top:12px" },
     el("h3", { text: "All numbers (mean ± standard deviation across seeds; bold: best policy, baselines excluded; click a row to open its first run below)" }),
