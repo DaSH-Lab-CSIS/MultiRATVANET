@@ -23,21 +23,31 @@ LABELS = {"coverage_priority": "CoveragePriority", "sinr": "Sinr", "reliable_sin
           "load": "Load", "ensemble": "Ensemble", "ml": "Ml", "example_split": "ExampleSplit",
           "only_dsrc": "only DSRC", "only_wifi": "only WiFi", "only_nr": "only 5G"}
 
-# (key, column title, kind, higher is better)
-METRICS = [
-    ("safety_delivered",  "Safety delivered",       "pct", True),
-    ("safety_on_time",    "Safety on time",         "pct", True),
-    ("safety_delay_ms",   "Safety delay ms",        "ms",  False),
-    ("info_delivered",    "Infot. delivered",       "pct", True),
-    ("info_on_time",      "Infot. on time",         "pct", True),
-    ("info_delay_ms",     "Infot. delay ms",        "ms",  False),
+# (key, column title, kind, higher is better). The key metrics come first, per traffic class.
+def class_cols(prefix, label):
+    return [
+        (f"{prefix}_delay_ms",        "Latency ms",            "ms",   False),
+        (f"{prefix}_delivered",       "PDR",                   "pct",  True),
+        (f"{prefix}_throughput_mbps", "Throughput Mbit/s",     "mbps", True),
+        (f"{prefix}_loss",            "Packet loss",           "pct",  False),
+        (f"{prefix}_switches_per_min", "Handovers / car-min",  "num",  False),
+        (f"{prefix}_gap_ms",          "Interruption ms",       "ms",   False),
+        (f"{prefix}_on_time",         "On time",               "pct",  True),
+    ]
+
+
+SAFETY = class_cols("safety", "Safety")
+INFO = class_cols("info", "Infotainment")
+CAR = [
+    ("ping_pong_rate",    "Ping-pong rate",         "pct", False),
+    ("availability",      "Network availability",   "pct", True),
     ("handovers_per_car", "Handovers / car",        "num", False),
     ("ping_pong",         "Ping-pongs (all cars)",  "cnt", False),
-    ("interruption_ms",   "Switch gap ms",          "ms",  False),
     ("share_dsrc",        "On DSRC",                "pct", None),
     ("share_wifi",        "On WiFi",                "pct", None),
     ("share_nr",          "On 5G",                  "pct", None),
 ]
+METRICS = SAFETY + INFO + CAR
 
 
 def run_metrics(run):
@@ -49,8 +59,14 @@ def run_metrics(run):
             out[prefix + "_delivered"] = c["pdr"]
             out[prefix + "_on_time"] = c["within_deadline"]
             out[prefix + "_delay_ms"] = c["delay_mean_ms"]
+            out[prefix + "_throughput_mbps"] = c.get("throughput_mbps")
+            out[prefix + "_loss"] = 1 - c["pdr"] if c.get("pdr") is not None else None
+            out[prefix + "_switches_per_min"] = c.get("switches_per_min")
+            out[prefix + "_gap_ms"] = c.get("gap_mean_ms")
     out["handovers_per_car"] = s["handovers_per_vehicle"]
     out["ping_pong"] = s["ping_pong"]
+    out["ping_pong_rate"] = s.get("ping_pong_rate")
+    out["availability"] = s.get("connectivity")
     out["interruption_ms"] = s["interruption_mean_ms"]
     shares = s.get("shares") or {}
     out["share_dsrc"] = shares.get("DSRC")
@@ -117,6 +133,8 @@ def fmt(v, kind, sign=False):
         return f"{v * 100:+.1f}" if sign else f"{v * 100:.1f} %"
     if kind in ("ms", "cnt"):
         return f"{v:+.1f}" if sign else f"{v:.1f}"
+    if kind == "mbps":
+        return f"{v:+.3f}" if sign else f"{v:.3f}"
     return f"{v:+.2f}" if sign else f"{v:.2f}"
 
 
@@ -138,9 +156,10 @@ def table(rows, cols, against=None):
             sd = r[key]["std"]
             cell = fmt(m, kind)
             if sd and len(r["seeds"]) > 1:
-                cell += " ±" + (f"{sd * 100:.1f}" if kind == "pct" else f"{sd:.1f}" if kind in ("ms", "cnt") else f"{sd:.2f}")
-            if against and policy in against and against[policy][key]["mean"] is not None and m is not None:
-                cell += f" ({fmt(m - against[policy][key]['mean'], kind, sign=True)})"
+                cell += " ±" + (f"{sd * 100:.1f}" if kind == "pct" else f"{sd:.1f}" if kind in ("ms", "cnt") else f"{sd:.3f}" if kind == "mbps" else f"{sd:.2f}")
+            prev = (against or {}).get(policy, {}).get(key, {}).get("mean")
+            if prev is not None and m is not None:
+                cell += f" ({fmt(m - prev, kind, sign=True)})"
             cells.append(cell)
         lines.append(f"| {LABELS.get(policy, policy)} | " + " | ".join(cells) + " |")
     return "\n".join(lines)
@@ -160,13 +179,19 @@ def render(summary, against=None):
                    f" (commit {', '.join(against.get('commits', [])) or '?'}); percentages in points.")
         out.append("")
     out.append("Values are the mean over the seeds, ± the standard deviation across seeds. Safety is judged at"
-               " the server (100 ms deadline), infotainment at the car (1 s from the request). Switch gap: first"
-               " request sent on the new RAT until the first one that arrives. On DSRC/WiFi/5G: share of the time"
-               " a car was attached to a RAT, averaged over the cars (a car that never attached counts 0).")
+               " the server (100 ms deadline), infotainment at the car (1 s from the request).")
+    out.append("")
+    out.append("Latency: mean end-to-end delay of the packets that arrived. PDR: share of packets delivered;"
+               " packet loss = 1 - PDR. Throughput: data delivered per second, all cars together. Handovers /"
+               " car-min: RAT switches of that traffic per car and minute attached. Interruption: after a switch,"
+               " first packet sent on the new RAT until the first one arrives. Ping-pong rate: share of switches"
+               " back to the previous RAT within 2 s. Network availability: share of the time a car had a usable"
+               " RAT. On DSRC/WiFi/5G: share of the time a car was attached to a RAT, averaged over the cars.")
     for scenario, rows in summary["scenarios"].items():
         prev = (against or {}).get("scenarios", {}).get(scenario)
-        out += ["", f"## {scenario}", "", "### Traffic", "", table(rows, METRICS[:6], prev),
-                "", "### Switching and where the cars were", "", table(rows, METRICS[6:], prev)]
+        out += ["", f"## {scenario}", "", "### Safety", "", table(rows, SAFETY, prev),
+                "", "### Infotainment", "", table(rows, INFO, prev),
+                "", "### Per car: ping-pongs, availability, where the cars were", "", table(rows, CAR, prev)]
     if summary["failed"]:
         out += ["", "**Failed runs:** " + ", ".join(summary["failed"])]
     return "\n".join(out) + "\n"
