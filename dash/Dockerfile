@@ -28,7 +28,7 @@ RUN ./tools/build.sh
 COPY --chown=vsim:vsim dash/manifest.yaml /opt/dash/manifest.yaml
 
 # Smoke: start the TraCI broker, run one short all-cellular scenario into a scratch results dir,
-# and fail the build unless packets reached the server over LTE/NR (0 = broken cellular path)
+# and fail the build unless packets reached the server over NR (0 = broken cellular path)
 RUN if [ "${RUN_SMOKE}" = 1 ]; then \
       veins_launchd -vv -c sumo -L /tmp/smoke_launchd.log >/dev/null 2>&1 & lp=$!; \
       sleep 2; \

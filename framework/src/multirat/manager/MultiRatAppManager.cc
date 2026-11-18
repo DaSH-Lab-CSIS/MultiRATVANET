@@ -3,6 +3,8 @@
 //
 #include "MultiRatAppManager.h"
 
+#include <cmath>
+
 #include "RatCoverageMonitor.h"
 #include "policies/RatPolicyFactory.h"
 #include "policies/EnsemblePolicy.h"
@@ -15,6 +17,10 @@
 #include "inet/networklayer/ipv4/Ipv4Route.h"
 #include "inet/networklayer/ipv4/Ipv4InterfaceData.h"
 #include "inet/networklayer/contract/ipv4/Ipv4Address.h"
+#include "inet/mobility/contract/IMobility.h"
+#include "inet/networklayer/common/L3AddressResolver.h"
+
+#include "veins_inet/VeinsInetMobility.h"
 
 namespace multiratvanet {
 
@@ -39,7 +45,6 @@ void MultiRatAppManager::initialize(int stage)
         handoverDelayPerRat_[(int)RatId::NR]   = par("nrHandoverDelay").doubleValue();
         handoverDelayPerRat_[(int)RatId::SIXG] = par("sixgHandoverDelay").doubleValue();
         pingPongWindow_ = par("pingPongWindow").doubleValue();
-        decideOnlyOnCoverageChange_ = par("decideOnlyOnCoverageChange").boolValue();
 
         ifaceName_[(int)RatId::DSRC] = par("dsrcInterface").stdstringValue();
         ifaceName_[(int)RatId::WIFI] = par("wifiInterface").stdstringValue();
@@ -52,7 +57,15 @@ void MultiRatAppManager::initialize(int stage)
         gateway_[(int)RatId::NR]   = par("nrGateway").stdstringValue();
         gateway_[(int)RatId::SIXG] = par("sixgGateway").stdstringValue();
 
-        policy_ = RatPolicyFactory::create(par("policy").stdstringValue());
+        PolicyParams pp;
+        pp.timeToTrigger = par("timeToTrigger").doubleValue();
+        pp.sinrMarginDb = par("sinrSwitchMargin").doubleValue();
+        pp.loadMargin = par("loadSwitchMargin").doubleValue();
+        pp.maxLatencyMs = par("latencyBudget").doubleValue() * 1e3;
+        policy_ = RatPolicyFactory::create(par("policy").stdstringValue(), pp);
+        if (!policy_)
+            throw cRuntimeError("Unknown policy \"%s\" (CoveragePriority, Sinr, LatencyQos, Load, Ml, Ensemble or ExampleSplit)",
+                    par("policy").stringValue());
         if (auto *ens = dynamic_cast<EnsemblePolicy *>(policy_.get())) {
             ens->setWeights(par("ensembleWeightCoverage").doubleValue(),
                             par("ensembleWeightSinr").doubleValue(),
@@ -75,6 +88,15 @@ void MultiRatAppManager::initialize(int stage)
         outageTimeSignal_ = registerSignal("outageTime");
         decisionCountSignal_ = registerSignal("decisionCount");
         handoverFailedSignal_ = registerSignal("handoverFailed");
+        decisionRejectedSignal_ = registerSignal("decisionRejected");
+
+        // who this vehicle is, for the policy
+        cModule *host = getContainingNode(this);
+        vehicleId_ = host->isVector() ? host->getIndex() : host->getId();
+        cModule *mob = host->getSubmodule("mobility");
+        mobility_ = dynamic_cast<IMobility *>(mob);
+        if (auto *sumoMobility = dynamic_cast<veins::VeinsInetMobility *>(mob))
+            externalId_ = sumoMobility->getExternalId();
 
         decisionTimer_ = new cMessage("ratDecision");
         applyTimer_ = new cMessage("applyHandover");
@@ -97,11 +119,18 @@ void MultiRatAppManager::configureWlanInterfaces()
 {
     if (!ift_)
         return;
+    // One /8 block per WiFi/DSRC RAT (DSRC 30.x, WiFi 20.x; 10.x is the cellular network),
+    // <block>.<hi>.<lo>.1 with a 16-bit number per car. The router has a route for each block
+    // onto that RAT's LAN (simulations/router.mrt), so the server's replies find their way back. Cars are
+    // elements of one module vector whose index is never reused, so the index is unique; the
+    // module id is not (it grows by several hundred per car and would wrap within one long run).
     cModule *host = getContainingNode(this);
-    uint32_t hostId = (uint32_t)host->getId();
-    // One /8 block per WiFi/DSRC RAT; host id keeps addresses unique per car.
+    uint32_t hostId = (uint32_t)(host->isVector() ? host->getIndex() : host->getId());
+    if (hostId > 0xFFFF)
+        throw cRuntimeError("Cannot give %s a unique DSRC/WiFi address: more than 65536 vehicles in one run",
+                host->getFullPath().c_str());
     const struct { RatId id; uint8_t block; } wlans[] = {
-        { RatId::DSRC, 10 }, { RatId::WIFI, 20 }
+        { RatId::DSRC, 30 }, { RatId::WIFI, 20 }
     };
     for (const auto &w : wlans) {
         int idx = ratIndex(w.id);
@@ -133,40 +162,200 @@ void MultiRatAppManager::decide()
 {
     const RatMetricsVec &metrics = monitor_->getMetrics();
 
-    if (decideOnlyOnCoverageChange_) {
-        unsigned long mask = 0;
-        for (const auto &m : metrics)
-            if (m.present && m.inRange)
-                mask |= (1u << ratIndex(m.id));
-        if (mask == lastCoverageMask_ && current_ != RatId::NONE)
-            return; // no coverage change -> nothing to decide
-        lastCoverageMask_ = mask;
-    }
-
     emit(decisionCountSignal_, (long)1);
-    RatId target = policy_->select(current_, metrics);
+    PolicyResponse response = policy_->decide(buildRequest());
+    RatId target = response.rat;
+    previous_.requestedRat = target;
+    if (!response.reason.empty())
+        EV_INFO << policy_->name() << ": " << ratName(target) << " (" << response.reason << ")" << endl;
 
-    if (target == RatId::NONE)
-        return; // no usable RAT; keep whatever we had
+    applyDefaultRat(target, metrics);
+
+    // A RAT of its own for a traffic class, if the policy named one that is in range.
+    for (auto &entry : classes_) {
+        RatId own = RatId::NONE;
+        auto it = response.classRat.find(entry.first);
+        if (it != response.classRat.end() && it->second != RatId::NONE) {
+            if (IRatSelectionPolicy::usable(it->second, metrics))
+                own = it->second;
+            else {
+                emit(decisionRejectedSignal_, (long)1);
+                EV_WARN << policy_->name() << " asked for " << ratName(it->second) << " for class " << entry.first
+                        << ", which is not in range; the class stays on the default RAT." << endl;
+            }
+        }
+        entry.second.overrideRat = own;
+    }
+    updateClassRats();
+}
+
+void MultiRatAppManager::applyDefaultRat(RatId target, const RatMetricsVec &metrics)
+{
+    if (target == RatId::NONE || target == current_) {
+        previous_.outcome = DecisionOutcome::KEPT; // no usable RAT, or stay: keep whatever we had
+        return;
+    }
+    // A policy must only name a RAT that is in range. The built-in ones always do.
+    if (!IRatSelectionPolicy::usable(target, metrics)) {
+        previous_.outcome = DecisionOutcome::REJECTED;
+        emit(decisionRejectedSignal_, (long)1);
+        EV_WARN << policy_->name() << " asked for " << ratName(target) << ", which is not in range; ignored." << endl;
+        return;
+    }
 
     if (current_ == RatId::NONE) {
         attach(target);
     }
-    else if (target != current_ && !inHandover_) {
+    else if (!inHandover_) {
+        previous_.outcome = DecisionOutcome::SWITCH_PENDING; // applyHandover() settles it
         initiateHandover(target);
     }
+    else {
+        previous_.outcome = DecisionOutcome::IGNORED;
+    }
+}
+
+void MultiRatAppManager::updateClassRats()
+{
+    double now = simTime().dbl();
+    for (auto &entry : classes_) {
+        ClassState &c = entry.second;
+        RatId rat = c.overrideRat != RatId::NONE ? c.overrideRat : current_;
+        if (rat == c.rat)
+            continue;
+        if (c.rat != RatId::NONE) {
+            c.residency[ratIndex(c.rat)] += now - c.since;
+            ++c.switches;
+        }
+        c.rat = rat;
+        c.since = now;
+    }
+}
+
+void MultiRatAppManager::registerTrafficClass(const std::string &trafficClass)
+{
+    Enter_Method_Silent();
+    ClassState &c = classes_[trafficClass];
+    c.rat = current_;
+    c.since = simTime().dbl();
+}
+
+RatId MultiRatAppManager::getClassRat(const std::string &trafficClass) const
+{
+    auto it = classes_.find(trafficClass);
+    return it == classes_.end() ? current_ : it->second.rat;
+}
+
+long MultiRatAppManager::getClassSwitchCount(const std::string &trafficClass) const
+{
+    auto it = classes_.find(trafficClass);
+    return it == classes_.end() ? handoverTotal_ : it->second.switches;
+}
+
+bool MultiRatAppManager::getRatRoute(RatId rat, int &interfaceId, Ipv4Address &gateway) const
+{
+    int idx = ratIndex(rat);
+    if (!ift_ || idx < 0 || idx >= (int)RatId::COUNT)
+        return false;
+    NetworkInterface *ie = ift_->findInterfaceByName(ifaceName_[idx].c_str());
+    if (!ie || !ie->findProtocolData<Ipv4InterfaceData>())
+        return false;
+    interfaceId = ie->getInterfaceId();
+    gateway = gatewayOf(idx);
+    return true;
+}
+
+// The configured gateway of a RAT: an address, or a module and interface ("router%eth0") whose
+// address is looked up now, when the network's addresses have been assigned.
+Ipv4Address MultiRatAppManager::gatewayOf(int idx) const
+{
+    if (gateway_[idx].empty())
+        return Ipv4Address();
+    return L3AddressResolver().resolve(gateway_[idx].c_str(), L3AddressResolver::ADDR_IPv4).toIpv4();
+}
+
+void MultiRatAppManager::reportRequest(const std::string &trafficClass, int repliesExpected)
+{
+    Enter_Method_Silent();
+    ClassState &c = classes_[trafficClass];
+    for (TrafficCounters *t : { &c.window, &c.total }) {
+        ++t->requests;
+        t->repliesExpected += repliesExpected;
+    }
+}
+
+void MultiRatAppManager::reportReply(const std::string &trafficClass, double delay)
+{
+    Enter_Method_Silent();
+    ClassState &c = classes_[trafficClass];
+    for (TrafficCounters *t : { &c.window, &c.total }) {
+        ++t->repliesReceived;
+        t->delaySum += delay;
+        if (delay > t->delayMax)
+            t->delayMax = delay;
+    }
+}
+
+PolicyRequest MultiRatAppManager::buildRequest()
+{
+    PolicyRequest r;
+    double now = simTime().dbl();
+    r.sequence = requestSeq_++;
+    r.time = now;
+    r.decisionInterval = decisionInterval_;
+
+    r.vehicle.id = vehicleId_;
+    r.vehicle.externalId = externalId_;
+    if (mobility_) {
+        const Coord &p = mobility_->getCurrentPosition();
+        const Coord &v = mobility_->getCurrentVelocity();
+        r.vehicle.x = p.x;
+        r.vehicle.y = p.y;
+        r.vehicle.z = p.z;
+        r.vehicle.vx = v.x;
+        r.vehicle.vy = v.y;
+        r.vehicle.speed = v.length();
+        r.vehicle.heading = r.vehicle.speed > 0 ? std::atan2(v.y, v.x) : 0.0;
+    }
+
+    r.connection.currentRat = current_;
+    r.connection.previousRat = lastRat_;
+    r.connection.timeOnCurrentRat = current_ != RatId::NONE ? now - currentSince_ : 0.0;
+    r.connection.switchCount = handoverTotal_;
+    r.connection.pingPongCount = pingPongTotal_;
+    r.connection.switchInProgress = inHandover_;
+    r.connection.pendingRat = inHandover_ ? pendingTarget_ : RatId::NONE;
+
+    r.rats = monitor_->getMetrics();
+    r.previous = previous_;
+
+    for (auto &entry : classes_) {
+        ClassState &c = entry.second;
+        TrafficState t;
+        t.trafficClass = entry.first;
+        t.rat = c.rat;
+        t.switchCount = c.switches;
+        t.window = c.window;
+        t.total = c.total;
+        r.traffic.push_back(t);
+        c.window = TrafficCounters(); // the next window starts here
+    }
+    return r;
 }
 
 void MultiRatAppManager::attach(RatId target)
 {
     if (!applyDefaultRoute(target)) {
+        previous_.outcome = DecisionOutcome::SWITCH_FAILED;
         emit(handoverFailedSignal_, (long)1);
         return;
     }
+    previous_.outcome = DecisionOutcome::ATTACHED;
     accountResidency();
     lastRat_ = current_;
     current_ = target;
     lastSwitchTime_ = simTime().dbl();
+    updateClassRats();
     emit(activeRatSignal_, (long)ratIndex(current_));
     EV_INFO << "Initial RAT attach -> " << ratName(current_) << endl;
 }
@@ -194,6 +383,7 @@ void MultiRatAppManager::applyHandover()
     if (!stillUsable || !applyDefaultRoute(pendingTarget_)) {
         emit(handoverFailedSignal_, (long)1);
         inHandover_ = false;
+        previous_.outcome = DecisionOutcome::SWITCH_FAILED;
         EV_WARN << "Handover to " << ratName(pendingTarget_) << " failed/aborted." << endl;
         return;
     }
@@ -211,6 +401,8 @@ void MultiRatAppManager::applyHandover()
     lastSwitchTime_ = simTime().dbl();
     inHandover_ = false;
     ++handoverTotal_;
+    previous_.outcome = DecisionOutcome::SWITCH_COMPLETED;
+    updateClassRats();
 
     // Measured handover delay: elapsed sim time from the moment the switch was
     // initiated until the new default route is actually installed (i.e. the
@@ -254,8 +446,7 @@ bool MultiRatAppManager::applyDefaultRoute(RatId target)
     Ipv4Route *nr = new Ipv4Route();
     nr->setDestination(Ipv4Address::UNSPECIFIED_ADDRESS);
     nr->setNetmask(Ipv4Address::UNSPECIFIED_ADDRESS);
-    if (!gateway_[idx].empty())
-        nr->setGateway(Ipv4Address(gateway_[idx].c_str()));
+    nr->setGateway(gatewayOf(idx));
     nr->setInterface(ie);
     nr->setSourceType(Ipv4Route::MANUAL);
     nr->setMetric(0);
@@ -279,6 +470,10 @@ void MultiRatAppManager::handleMessage(cMessage *msg)
 
 void MultiRatAppManager::finish()
 {
+    // the vehicle is leaving (or the run is over): the policy is told, with its last state
+    if (policy_ && monitor_)
+        policy_->vehicleLeft(buildRequest());
+
     accountResidency();
 
     double total = 0;
@@ -291,6 +486,20 @@ void MultiRatAppManager::finish()
         recordScalar((base + ".selectionShare").c_str(),
                 total > 0 ? residency_[i] / total : 0.0);
     }
+    // per traffic class: where it was sent and how often that changed
+    for (auto &entry : classes_) {
+        ClassState &c = entry.second;
+        if (c.rat != RatId::NONE)
+            c.residency[ratIndex(c.rat)] += simTime().dbl() - c.since;
+        c.since = simTime().dbl();
+        double classTotal = 0;
+        for (int i = 0; i < (int)RatId::COUNT; ++i)
+            classTotal += c.residency[i];
+        recordScalar((entry.first + ".switches").c_str(), c.switches);
+        for (int i = 0; i < (int)RatId::COUNT; ++i)
+            recordScalar((entry.first + "." + ratName((RatId)i) + ".selectionShare").c_str(),
+                    classTotal > 0 ? c.residency[i] / classTotal : 0.0);
+    }
     recordScalar("handoversTotal", handoverTotal_);
     recordScalar("pingPongTotal", pingPongTotal_);
     recordScalar("pingPongRatio",
@@ -302,9 +511,12 @@ void MultiRatAppManager::finish()
     recordScalar("handoverDelayMax", handoverDelayMax_, "s");
     recordScalar("handoverDelayTotal", handoverDelaySum_, "s");
 
+}
+
+MultiRatAppManager::~MultiRatAppManager()
+{
     cancelAndDelete(decisionTimer_);
     cancelAndDelete(applyTimer_);
-    decisionTimer_ = applyTimer_ = nullptr;
 }
 
 } // namespace multiratvanet

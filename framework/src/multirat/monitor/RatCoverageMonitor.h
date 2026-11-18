@@ -19,17 +19,19 @@ namespace multiratvanet {
 // Estimates per-RAT coverage for the parent vehicle and publishes a metric
 // vector consumed by the MultiRatAppManager.
 //
-// signalSource "measured": every metric comes from the running simulation.
-//   signal   estimated uplink SINR, since cars send uplink: 802.11 = SNIR of beacons from the
-//            AP/RSU the car is associated with, cellular = Simu5G downlink SINR; both minus
-//            the transmit-power difference between infrastructure and car
-//   load     802.11: channel busy ratio seen by the car's radio; cellular: uplink
-//            resource-block utilisation of the car's serving cell
-//   capacity link rate x free share (802.11: rate the MAC actually uses;
-//            cellular: spectral efficiency from SINR x cell bandwidth)
-//   latency  path latency + packet service time / (1 - load)
-//   in range measured recently, filtered SINR above the RAT's minimum (with
-//            hysteresis), and for 802.11 associated with an AP/RSU
+// signalSource "measured": every metric is something the car's own radios observe.
+//   signal    estimated uplink SINR, since cars send uplink: 802.11 = SNIR of frames from the
+//             AP/RSU the car is associated with, cellular = Simu5G downlink SINR; both minus
+//             the transmit-power difference between infrastructure and car
+//   load      802.11 only: channel busy ratio sensed by the car's radio. A UE cannot see its
+//             cell's load, so cellular has none (NaN)
+//   link rate 802.11: rate the MAC actually uses; cellular: spectral efficiency from the
+//             car's SINR x cell bandwidth
+//   probes    round-trip time and loss of the probes the car's MultiRatProbeApp sends over
+//             each linked RAT (the only latency figure: nothing is estimated)
+//   in range  measured recently, filtered SINR above the RAT's minimum (with
+//             hysteresis), for 802.11 associated with an AP/RSU, and (requireProbeEcho) a
+//             probe echoed by the server within probeMaxAge
 // signalSource "proxy": the original distance-based estimate and fixed numbers.
 //
 class  RatCoverageMonitor : public omnetpp::cSimpleModule, public omnetpp::cListener
@@ -38,6 +40,11 @@ class  RatCoverageMonitor : public omnetpp::cSimpleModule, public omnetpp::cList
     // Snapshot of the latest per-RAT metrics (indexed by ratIndex()).
     const RatMetricsVec &getMetrics() const { return metrics_; }
     bool isInRange(RatId r) const;
+
+    // The car's probe results for one RAT, from its MultiRatProbeApp: round trip of the latest
+    // echo and the mean over the last second (ms), share of recent probes lost, and when the
+    // latest echo arrived (s, -1 = never). NaN where there is nothing to report.
+    void reportProbe(RatId r, double lastRttMs, double meanRttMs, double loss, double lastEchoTime);
 
   protected:
     virtual void initialize() override;
@@ -98,17 +105,17 @@ class  RatCoverageMonitor : public omnetpp::cSimpleModule, public omnetpp::cList
     };
     Busy busy_[(int)RatId::COUNT];
     // averages of what the policies were given while each RAT was in range (diagnostics)
-    struct InputStats { long n = 0; double sinrMargin = 0, load = 0, capacity = 0, latency = 0; };
+    struct InputStats { long n = 0, probeN = 0; double sinrMargin = 0, load = 0, linkRate = 0, probeRtt = 0; };
     InputStats inputStats_[(int)RatId::COUNT];
-    // cellular: uplink resource blocks allocated per TTI, per gNB MAC, since the last refresh
-    std::map<const omnetpp::cModule *, std::pair<double, long>> servedBlocks_;
     double linkRateMbps_[(int)RatId::COUNT];   // 802.11: rate data frames are sent at
-    double pathLatencyMs_[(int)RatId::COUNT];
+    struct ProbeState { double lastRttMs = NAN, meanRttMs = NAN, loss = NAN, lastEchoTime = -1; };
+    ProbeState probe_[(int)RatId::COUNT];
+    bool requireProbeEcho_ = false;
+    double probeMaxAge_ = 0.5;
     double minSinrDb_[(int)RatId::COUNT];
     double uplinkOffsetDb_[(int)RatId::COUNT];  // cellular: cell power - car power (dB)
     double inRangeHysteresisDb_ = 2;
     double filterWeight_ = 0.5;
-    double refPacketBits_ = 10000;
     omnetpp::cModule *binder_ = nullptr;
     Window window_[(int)RatId::COUNT];
     Measured measured_[(int)RatId::COUNT];
@@ -116,7 +123,6 @@ class  RatCoverageMonitor : public omnetpp::cSimpleModule, public omnetpp::cList
     double measurementMaxAge_ = 0.5;
     std::string dsrcNic_, wifiNic_;
     omnetpp::simsignal_t measuredSinrDlSignal_ = -1;
-    omnetpp::simsignal_t servedBlocksUlSignal_ = -1;
 
     RatCfg cfg_[(int)RatId::COUNT];
     std::vector<inet::IMobility *> infra_[(int)RatId::COUNT];

@@ -15,12 +15,12 @@
 
 namespace multiratvanet {
 
-class SinrPolicy : public IRatSelectionPolicy {
+class SinrPolicy : public TimeToTriggerPolicy {
   public:
     explicit SinrPolicy(double marginDb = 3.0, double timeToTrigger = 1.0)
-        : marginDb_(marginDb), confirm_(timeToTrigger) {}
+        : TimeToTriggerPolicy(timeToTrigger), marginDb_(marginDb) {}
 
-    RatId select(RatId current, const RatMetricsVec &metrics) override {
+    RatId prefer(RatId current, const RatMetricsVec &metrics) const override {
         RatId best = RatId::NONE;
         double bestMargin = -1e9;
         for (const auto &m : metrics) {
@@ -29,20 +29,18 @@ class SinrPolicy : public IRatSelectionPolicy {
                 best = m.id;
             }
         }
-        bool currentUsable = usable(current, metrics);
-        if (currentUsable) {
+        if (usable(current, metrics)) {
             const auto &cm = metrics[ratIndex(current)];
             if (bestMargin < cm.sinrDb - cm.minSinrDb + marginDb_)
                 best = current; // not enough gain to justify a switch
         }
-        return confirm_.apply(current, best, currentUsable, metrics);
+        return best;
     }
 
     const char *name() const override { return "Sinr"; }
 
   private:
     double marginDb_;
-    SwitchConfirmation confirm_;
 };
 
 } // namespace multiratvanet

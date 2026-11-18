@@ -1,13 +1,12 @@
-OMNeT++ 5.6.1
-INET 4.2.2
-Veins 5.2
-Simu5G 1.1.0
-SUMO 1.24.0+
+OMNeT++ 6.3.0
+INET 4.6.0      + docker/base/patches/inet-4.6.0-dash.patch
+Veins 5.3.1     + veins_inet
+Simu5G 1.7.0    + docker/base/patches/simu5g-1.7.0-dash.patch
+SUMO 1.22.0     (Veins 5.3.1 does not support newer TraCI versions)
+
+The Docker image (dash/build-image.sh) builds exactly these; exact sources and
+checksums are in docker/base/scripts/versions.sh and checksums.txt.
 
 Optional:
-Python 3.8+ (for analysis tools)
-pandas (data analysis)
-matplotlib (plotting)
-numpy (numerical analysis)
-Docker (containerization)
-GitHub Actions (CI/CD)
+Docker 20.10+   (recommended way to build and run)
+Python 3.8+     (dash/report.py; standard library only)

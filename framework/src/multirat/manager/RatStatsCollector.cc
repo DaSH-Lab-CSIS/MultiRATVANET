@@ -126,8 +126,11 @@ void RatStatsCollector::finish()
         recordScalar((base + ".x").c_str(), p.x, "m");
         recordScalar((base + ".y").c_str(), p.y, "m");
     }
+}
+
+RatStatsCollector::~RatStatsCollector()
+{
     cancelAndDelete(timer_);
-    timer_ = nullptr;
 }
 
 } // namespace multiratvanet

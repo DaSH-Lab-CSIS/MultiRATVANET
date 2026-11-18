@@ -1,210 +1,87 @@
-# Getting Started with MultiRATVANET
+# Getting Started
 
-This guide will help you set up MultiRATVANET and run your first simulation.
+There are two ways to build and run: with Docker (recommended; nothing else to install) or on a
+toolchain you built yourself.
 
-## Prerequisites
+## With Docker
 
-### Required
-- **OMNeT++ 5.6.1** (compiled & bin/ on PATH)
-- **INET 4.2.2** (compiled)
-- **Veins 5.2** (compiled, with veins_inet)
-- **Simu5G 1.1.0** (compiled)
-- **SUMO 1.24+** (on PATH)
-- **MinGW** (for Windows builds) or **GCC** (for Linux)
-
-### Optional
-- **Python 3.8+** (for analysis tools)
-- **pandas, matplotlib, numpy** (for plotting)
-- **Docker** (for containerized builds)
-
-## Installation
-
-### 1. Verify Framework Paths
-
-The build system expects frameworks in `external/`:
+Needs Docker 20.10+ and this repository.
 
 ```bash
-cd MultiRATVANET
-ls -la external/
-# Should show symlinks to:
-# - omnetpp-5.6.1
-# - inet-4.2.2
-# - veins-5.2
-# - simu5g-1.1.0
+# 1. Build the image. The first build compiles OMNeT++, INET, Veins, Simu5G and SUMO: 1-2 h.
+dash/build-image.sh
+
+# 2. Run one config for 120 simulated seconds. Results go to ./results
+dash/mrv run Sinr --sim-time-limit=120s
+
+# 3. Or run an experiment with parameters and get an HTML report (results/report.html)
+dash/run-experiment.sh --scenario highway --policy ensemble --time 120s --ensemble-weight-sinr 2
+dash/run-experiment.sh --help
 ```
 
-If symlinks are missing, create them:
+Put `DOCKER="sudo docker"` in front of a command if your user is not in the `docker` group.
+The image starts its own TraCI launch daemon, so there is nothing else to start.
 
-**Linux/macOS:**
-```bash
-cd external
-ln -s ../../omnetpp-5.6.1 .
-ln -s ../../inet-4.2.2-src/inet4 inet-4.2.2
-ln -s ../../veins-5.2/veins-veins-5.2 veins-5.2
-ln -s ../../Simu5G-1.1.0/Simu5G-1.1.0 simu5g-1.1.0
-```
+## Without Docker
 
-**Windows (PowerShell as Admin):**
-```powershell
-cd external
-New-Item -ItemType SymbolicLink -Path "omnetpp-5.6.1" -Target "../../omnetpp-5.6.1"
-New-Item -ItemType SymbolicLink -Path "inet-4.2.2" -Target "../../inet-4.2.2-src/inet4"
-New-Item -ItemType SymbolicLink -Path "veins-5.2" -Target "../../veins-5.2/veins-veins-5.2"
-New-Item -ItemType SymbolicLink -Path "simu5g-1.1.0" -Target "../../Simu5G-1.1.0/Simu5G-1.1.0"
-```
+Build these first; the versions must match:
 
-### 2. Verify OMNeT++ on PATH
+| Software | Version | Notes |
+|---|---|---|
+| OMNeT++ | 6.3.0 | |
+| INET | 4.6.0 | apply `docker/base/patches/inet-4.6.0-dash.patch` |
+| Veins | 5.3.1 | with `subprojects/veins_inet` |
+| Simu5G | 1.7.0 | apply `docker/base/patches/simu5g-1.7.0-dash.patch`; without it the cellular path delivers nothing |
+| SUMO | 1.22.0 | Veins 5.3.1 does not support newer TraCI versions |
 
-Test that OMNeT++ tools are accessible:
+`docker/base/Dockerfile` is the exact recipe if you want to follow it by hand.
+
+Tell the scripts where they are (the defaults in the scripts are the paths on the lab server):
 
 ```bash
-which opp_makemake    # Linux/macOS
-where opp_makemake    # Windows
-
-# Output should show path to OMNeT++ bin directory
+export OMNETPP_BIN=/path/to/omnetpp-6.3.0/bin
+export INET_DIR=/path/to/inet-4.6.0
+export VEINS_DIR=/path/to/veins-5.3.1
+export SIMU5G_DIR=/path/to/simu5g-1.7.0
 ```
 
-If not found, add OMNeT++ to PATH:
-
-**Linux/macOS:**
-```bash
-export PATH=$PATH:/path/to/omnetpp-5.6.1/bin
-```
-
-**Windows:**
-- Set PATH environment variable to include omnetpp-5.6.1\bin
-
-### 3. Build MultiRATVANET
+If OMNeT++ was installed with `opp_env`, run the commands below inside an `opp_env shell`.
 
 ```bash
-cd MultiRATVANET
-
-# Windows
-.\tools\build.bat
-
-# Linux/macOS
+# 1. Build the framework (output: framework/out/clang-release/framework)
 ./tools/build.sh
+
+# 2. In a second terminal: start the TraCI launch daemon and leave it running (port 9999)
+./tools/sumo-launchd.sh
+
+# 3. Run a config
+./tools/run.sh Sinr --sim-time-limit=120s
 ```
 
-Expected output:
-```
-=== Building MultiRATVANET Framework ===
-...
-Compiling (parallel build)...
-...
-✓ Build successful
-Output: out/libmultiratvanet.dll  (Windows)
-        out/libmultiratvanet.so   (Linux)
-```
+`./tools/run.sh` without arguments lists the configs. Without `--sim-time-limit` a run lasts as
+long as the config says in `simulations/omnetpp.ini` (300 s highway, 120 s urban grid, 1000 s
+ElectronicCity). Any other `--<ini-key>=<value>` is passed to the simulation, for example
+`'--*.car[*].multiRatAppManager.timeToTrigger=2s'`.
 
-### 4. Run First Simulation
+## Results
 
-```bash
-# Windows
-.\tools\run.bat Highway_CoveragePriority 70s
+Each run gets its own folder, `results/<CONFIG>_<timestamp>/` (under `$RESULTS_ROOT` if set):
 
-# Linux/macOS
-./tools/run.sh Highway_CoveragePriority --sim-time-limit=70s
-```
+- `*.sca`: scalars. Per car: `handoversTotal`, `pingPongTotal`, `<RAT>.selectionShare`,
+  `connectivityRatio`, `outageRatio`, and per traffic class `repliesExpected` /
+  `repliesReceived`. Per traffic class at the server: `packetsReceived`,
+  `packetsWithinDeadline`, `endToEndDelay`, `switchInterruption`.
+- `*.vec`, `*.vci`: time series.
+- `run-settings.ini`: a copy of `omnetpp.ini` as it was run.
 
-Expected output:
-```
-=== MultiRATVANET Simulation Launcher ===
-Configuration: Highway_CoveragePriority
-Simulation time: 70s
-Results dir: results/Highway_CoveragePriority_20260929_143022/
-
-[OMNeT++ simulation runs...]
-
-✓ Simulation complete
-Results: results/Highway_CoveragePriority_20260929_143022/
-```
-
-## First Results
-
-After the simulation completes, check the results:
-
-```bash
-ls -la results/Highway_CoveragePriority_*/
-
-# Should contain:
-# - run-settings.ini        (config snapshot)
-# - *.sca                   (statistics)
-# - *.vec                   (time-series data)
-# - analysis/               (if analysis was run)
-```
-
-## Verify Installation
-
-Run a quick verification:
-
-```bash
-# Check build artifacts
-ls -lh framework/out/
-
-# Check simulation results
-ls -la results/
-
-# Verify Python tools (optional)
-python -c "import pandas, matplotlib; print('✓ Analysis tools available')"
-```
-
-## Next Steps
-
-1. **Read [ARCHITECTURE.md](ARCHITECTURE.md)** — Understand the system design
-2. **Try different scenarios:**
-   ```bash
-   ./tools/run.sh UrbanGrid_Ensemble --sim-time-limit=120s
-   ./tools/run.sh ElectronicCity_Base --sim-time-limit=200s
-   ```
-3. **Analyze results:**
-   ```bash
-   python tools/analysis/export-results.py results/Highway_*/
-   python tools/analysis/plot-residency.py results/Highway_*/
-   ```
-4. **Follow tutorials in [tutorials/](tutorials/)** for advanced topics
+`python3 dash/report.py results` builds `results/report.html` from every run under `results/`.
 
 ## Troubleshooting
 
-**Problem:** `opp_makemake: not found`
-```
-Solution: Add OMNeT++ bin/ to PATH (see step 2 above)
-```
-
-**Problem:** `cannot find INET library`
-```
-Solution: Verify INET 4.2.2 is compiled and inet-4.2.2 symlink exists in external/
-Run: cd external/inet-4.2.2 && make
-```
-
-**Problem:** SUMO connection fails
-```
-Solution: Verify SUMO is on PATH: which sumo
-          Ensure only ONE SUMO daemon runs on port 9998
-```
-
-**Problem:** Simulation doesn't produce output
-```
-Solution: Check results/ directory was created
-          Check omnetpp.ini for [Config] section matching CONFIG name
-          Enable vector/scalar recording (see config/omnetpp.ini)
-```
-
-For more help, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
-
-## System Requirements
-
-| Component | Version | Size | Time to Compile |
-|-----------|---------|------|-----------------|
-| OMNeT++ | 5.6.1 | 500MB | 10-15 min |
-| INET | 4.2.2 | 200MB | 20-30 min |
-| Veins | 5.2 | 100MB | 10-15 min |
-| Simu5G | 1.1.0 | 150MB | 15-20 min |
-| SUMO | 1.24+ | 300MB | Precompiled |
-| **MultiRATVANET** | **1.0** | **~1MB** | **2-5 min** |
-
----
-
-**Ready? Let's build:** `./tools/build.sh`
-
-For questions, see the [full documentation index](INDEX.md).
+| Symptom | Cause |
+|---|---|
+| The run stops at start with a TraCI connection error | No launch daemon on port 9999. Start `tools/sumo-launchd.sh`, or check that another user's daemon is not holding the port. |
+| `This OMNeT++ installation cannot be used outside an opp_env shell` | Run `tools/build.sh` inside `opp_env shell`. |
+| The server receives nothing over cellular | Simu5G was built without `simu5g-1.7.0-dash.patch`. |
+| `Unknown policy "..."` | The `policy` parameter is not one of CoveragePriority, Sinr, LatencyQos, Load, Ml, Ensemble. |
+| The image build fails downloading sources | Put the release tarballs in `docker/base/dl/`; see `docker/base/README.md`. |

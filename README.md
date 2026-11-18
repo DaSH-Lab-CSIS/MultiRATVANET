@@ -2,7 +2,7 @@
 
 **Multi-RAT VANET Handover Simulation Framework** for OMNeT++ / Veins / SUMO / INET / Simu5G
 
-A vehicle carries multiple radio access technologies (DSRC, WiFi, LTE, 5G-NR) simultaneously, all terminating at a unified IPv4 stack. An application-layer RAT selector orchestrates handovers based on configurable policies, enabling research into multi-RAT vehicular network optimization.
+A vehicle carries multiple radio access technologies (DSRC, WiFi, 5G-NR) simultaneously, all terminating at a unified IPv4 stack. An application-layer RAT selector orchestrates handovers based on configurable policies, enabling research into multi-RAT vehicular network optimization.
 
 ## Quick Start (Docker)
 
@@ -23,23 +23,19 @@ Use `DOCKER="sudo docker"` in front of any of these if your user is not in the `
 
 ## Documentation
 
-- **[Getting Started](docs/GETTING_STARTED.md)** — Installation & first run
-- **[Architecture](docs/ARCHITECTURE.md)** — System design overview
-- **[Scenarios](docs/scenarios/)** — Highway, UrbanGrid, ElectronicCity
-- **[Configuration](docs/CONFIGURATION.md)** — Parameter reference
-- **[API Reference](docs/api/)** — Module & policy interfaces
-- **[Tutorials](docs/tutorials/)** — Step-by-step guides
+- **[Getting Started](docs/GETTING_STARTED.md)** — build and first run, with or without Docker
+- **[Policy Reference](docs/POLICY_REFERENCE.md)** — writing a RAT selection policy: inputs, outputs, example
+- **[Architecture](docs/ARCHITECTURE.md)** — modules, policies, metrics, scenarios, parameters
+- **[Toolchain image](docker/base/README.md)** — the pinned base image and its patches
 
 ## Features
 
-- ✅ **Multiple RATs:** DSRC, WiFi, LTE, 5G-NR, 6G placeholder
-- ✅ **Flexible policies:** Coverage Priority, SINR-based, Latency-QoS, Load-Balanced, Ensemble Voting, ML-driven
-- ✅ **Realistic scenarios:** Highway (baseline), UrbanGrid (synthetic), ElectronicCity (real OSM)
-- ✅ **Full V2X support:** CAM/DENM broadcasts, V2N upload/download
-- ✅ **Comprehensive KPIs:** Handover count, latency, ping-pong ratio, RAT residency, packet loss
-- ✅ **Automated tools:** Single-command build & run
-- ✅ **CI/CD ready:** GitHub Actions workflows included
-- ✅ **Docker support:** Reproducible environment
+- **RATs:** DSRC and WiFi (802.11 to roadside units / access points) and 5G-NR (Simu5G), all on one IPv4 stack; a 6G placeholder interface
+- **Policies:** CoveragePriority, Sinr, LatencyQos, Load, Ensemble (weighted vote of those four), and Ml, a hook for an external learned controller (no controller is included, so on its own it decides like CoveragePriority). ExampleSplit is a template for writing your own
+- **Car-side inputs:** a policy sees only what its own car knows: position, connection, per-RAT signal, sensed load and link rate, the round trip and loss of its own probes, and the replies to its own traffic
+- **Scenarios:** Highway, UrbanGrid (synthetic), ElectronicCity (real OSM), plus V2V beaconing over ad-hoc DSRC and C-V2X sidelink broadcast
+- **Traffic and KPIs:** two-way, request-and-reply: safety messages the server acknowledges, and infotainment data the server sends on request. A policy can put each class on its own RAT. Delivery, delay, deadline, throughput, handovers, ping-pong, time on each RAT, outage, and the interruption each switch causes
+- **Docker:** one image with the pinned toolchain; an experiment runner and an HTML report
 
 ## Prerequisites
 
@@ -56,29 +52,24 @@ Without Docker, build these yourself (versions must match):
 ## Repository Structure
 
 ```
-framework/               Core MultiRATVANET code
-├── src/multirat/
-│   ├── base/           Types, metrics, constants
-│   ├── core/           NED nodes & networks
-│   ├── monitor/        Coverage, SINR, latency detection
-│   ├── manager/        Handover logic & statistics
-│   ├── policies/       RAT selection strategies
-│   └── apps/           V2V, V2X applications
-
-simulations/            OMNeT++ simulation config
-├── networks/           Network topologies (NED)
-├── scenarios/          Configuration by scenario (INI)
-└── omnetpp.ini        Master configuration
-
-sumo/                   SUMO traffic models
-├── highway/
-├── urbangrid/
-└── electroniccity/
-
-docs/                   Comprehensive documentation
-tools/                  Build, run, analysis automation
-tests/                  Unit & integration tests
-results/                Experiment results & analysis
+framework/src/multirat/   The framework (C++ and NED)
+├── base/                 RAT ids, per-RAT metrics, and the policy request/response types
+├── core/                 MultiRatCar, WifiAp, DsrcRsu, 6G placeholder interface
+├── monitor/              RatCoverageMonitor: per-RAT signal, sensed load, link rate, in range
+├── manager/              MultiRatAppManager (decides and switches), RatStatsCollector
+├── policies/             RAT selection policies
+├── apps/                 Traffic app, probe app, server sink, V2V beacon app
+└── _ned/                 Links to all NED files in one folder (the NED path used by tools/run.sh)
+simulations/
+├── omnetpp.ini           All configs
+├── router.mrt            The core router's routes back to the cars' DSRC and WiFi addresses
+├── networks/             Network topologies (NED)
+└── scenarios/            SUMO network, routes and launch files per scenario
+sumo/                     Source files the SUMO scenarios were generated from
+tools/                    build.sh, run.sh, sumo-launchd.sh
+dash/                     Docker image, experiment runner, HTML report, dashboard manifest
+docker/base/              Pinned toolchain image (OMNeT++, INET, Veins, Simu5G, SUMO) and patches
+docs/                     Documentation
 ```
 
 ## Build & Run
@@ -106,56 +97,45 @@ If GitHub downloads fail during the build, put the release tarballs in `docker/b
 
 ### Without Docker
 
-`tools/build.sh` and `tools/run.sh` read `OMNETPP_BIN`, `INET_DIR`, `VEINS_DIR` and `SIMU5G_DIR` from the environment. Start `veins_launchd -c sumo -p 9999` from the repo root first.
+`tools/build.sh` and `tools/run.sh` read `OMNETPP_BIN`, `INET_DIR`, `VEINS_DIR` and `SIMU5G_DIR` from the environment. Start the TraCI launch daemon first and leave it running (`tools/sumo-launchd.sh`, port 9999).
 
 ```bash
 ./tools/build.sh
 ./tools/run.sh Ensemble --sim-time-limit=120s
 ```
 
+`tools/run.sh <CONFIG>` uses the config's own `sim-time-limit` unless `--sim-time-limit=` is given, runs every run of the config (`--run=N` picks one of a parameter study such as `EnsembleSweep`), and passes any other `--<ini-key>=<value>` to the simulation. Results go to `results/<CONFIG>_<timestamp>/` (or under `$RESULTS_ROOT`).
+
 ## Configuration
 
-Each scenario has multiple configurations:
+All configs are in `simulations/omnetpp.ini`:
 
 ```
 CoveragePriority, Sinr, LatencyQos, Load, Ml, Ensemble    Highway, one per policy
-DsrcLteHandover, V2V, CV2X                                Highway variants
+EnsembleSweep                                             Highway, 9 runs over the ensemble weights
+DsrcNrHandover, V2V, CV2X                                 Highway variants
 UrbanGrid_CoveragePriority, UrbanGrid_Ensemble, UrbanGrid_ML
 ElectronicCity_CoveragePriority, ElectronicCity_Ensemble, ElectronicCity_ML
 ```
 
-The number of vehicles comes from the SUMO route files; `numCars` in the ini has no effect.
+- **Vehicles:** the number comes from the SUMO route file of the scenario (`simulations/scenarios/<scenario>/*.rou.xml`), not from the ini.
+- **Cellular is one RAT, 5G-NR.** The networks have gNodeBs only, so LTE is switched off (`hasLte = false`). `DsrcLteHandover` is kept as an old name of `DsrcNrHandover`.
+- **Probing** (`*.car[*].app[2].probeInterval`, 100 ms): every car probes every linked RAT; a RAT is usable only while the server's echoes come back (`*.car[*].ratCoverageMonitor.probeMaxAge`, 0.5 s).
+- **Policy tunables** (`*.car[*].multiRatAppManager.*`): `decisionInterval`, `timeToTrigger`, `sinrSwitchMargin`, `loadSwitchMargin`, `latencyBudget`, the `ensembleWeight*` values and `ensembleStickiness`. See [Architecture](docs/ARCHITECTURE.md).
+- **Infrastructure positions, traffic classes and radio settings** are in the `[General]` section and the scenario base configs.
 
-Modify `simulations/scenarios/*/config.ini` to adjust:
-- Vehicle density & routes
-- Infrastructure positions & coverage
-- RAT parameters (bandwidth, delay, power)
-- Policy hysteresis & thresholds
-- Handover decision interval
+## Results
 
-## Results & Analysis
+Each run writes to its own folder:
 
-Results saved per run:
 ```
-results/<Scenario>_<Config>_<timestamp>/
-├── run-settings.ini         Config snapshot
-├── *.sca                    Statistics
-├── *.vec                    Time-series vectors
-└── analysis/
-    ├── summary.csv          Aggregated KPIs
-    └── plots/               Generated plots
+results/<run>/
+├── run-settings.ini         Copy of omnetpp.ini as it was run
+├── *.sca                    Scalars (per-car and per-class KPIs)
+└── *.vec, *.vci             Time series
 ```
 
-Export & analyze:
-```bash
-python tools/analysis/export-results.py results/*/
-python tools/analysis/plot-handovers.py results/*/
-python tools/analysis/statistical-summary.py results/*/
-```
-
-## Contributing
-
-See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for guidelines.
+`dash/run-experiment.sh` adds `run.json` and `console.log` per run and rebuilds `results/report.html`, which compares all runs. To rebuild the report by hand: `python3 dash/report.py results`.
 
 ## License
 
@@ -169,16 +149,6 @@ If you use MultiRATVANET in your research, please cite:
 [Your citation here when published]
 ```
 
-## Support
-
-- **Issues:** GitHub Issues
-- **Documentation:** See `docs/INDEX.md`
-- **Troubleshooting:** See `docs/TROUBLESHOOTING.md`
-
 ---
 
 **Built with:** OMNeT++ • INET • Veins • Simu5G • SUMO
-
-**Maintained by:** [Your Team/Lab]
-
-**Last Updated:** September 2026

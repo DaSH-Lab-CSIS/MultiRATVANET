@@ -19,14 +19,14 @@ simple RatCoverageMonitor
         double updateInterval @unit(s) = default(0.1s);
 
         // Where per-RAT metrics come from:
-        //   "measured": the running simulation (see RatCoverageMonitor.h). signal = estimated uplink
-        //               SINR: SNIR of beacons from the associated RSU/AP, or Simu5G downlink SINR,
-        //               minus the transmit-power difference between infrastructure and car;
-        //               load = 802.11 channel busy ratio, serving cell uplink RB utilisation;
-        //               capacity = link rate x free share; latency = path latency + service
-        //               time / (1 - load). In range = measured within measurementMaxAge, filtered
-        //               SINR >= the RAT's *MinSinr (+inRangeHysteresis to enter), and for 802.11
-        //               associated. The *Range, *RssiThreshold, path-loss and *LatencyMs /
+        //   "measured": what the car's own radios observe in the running simulation (see
+        //               RatCoverageMonitor.h). signal = estimated uplink SINR: SNIR of frames from the
+        //               associated RSU/AP, or Simu5G downlink SINR, minus the transmit-power difference
+        //               between infrastructure and car; load = 802.11 channel busy ratio the radio
+        //               senses (none for cellular: a car cannot see its cell's load); link rate = the
+        //               rate the radio would send at. In range = measured within measurementMaxAge,
+        //               filtered SINR >= the RAT's *MinSinr (+inRangeHysteresis to enter), and for
+        //               802.11 associated. The *Range, *RssiThreshold, path-loss and *LatencyMs /
         //               *CapacityMbps parameters are not used.
         //   "proxy":    distance to the nearest infrastructure node, a log-distance path-loss
         //               estimate and the fixed *LatencyMs / *CapacityMbps numbers (the original
@@ -39,11 +39,10 @@ simple RatCoverageMonitor
         double nrMinSinr @unit(dB) = default(-5dB);
         double inRangeHysteresis @unit(dB) = default(2dB); // extra SINR needed to enter range
         double filterWeight = default(0.5);   // weight of the newest sample (signal and load filters)
-        // Fixed parts of latency the metrics cannot see: 802.11 channel access, cellular
-        // scheduling request/grant cycle. Reference packet size for the service time.
-        double wlanPathLatency @unit(s) = default(0.2ms);
-        double cellularPathLatency @unit(s) = default(4ms);
-        int latencyReferencePacket @unit(B) = default(1250B);
+        // A RAT counts as in range only if the server echoed one of the car's probes over it
+        // within probeMaxAge. Needs a MultiRatProbeApp on the car; without one leave it off.
+        bool requireProbeEcho = default(false);
+        double probeMaxAge @unit(s) = default(0.5s);
         string dsrcNic = default("wlan[0]");   // car NIC whose radio carries DSRC / WiFi
         string wifiNic = default("wlan[1]");
         bool useDistance = default(true);   // gate coverage on distance <= range

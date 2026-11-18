@@ -14,25 +14,24 @@
 
 namespace multiratvanet {
 
-class CoveragePriorityPolicy : public IRatSelectionPolicy {
+class CoveragePriorityPolicy : public TimeToTriggerPolicy {
   public:
     explicit CoveragePriorityPolicy(std::vector<RatId> order = defaultOrder(), double timeToTrigger = 1.0)
-        : order_(std::move(order)), confirm_(timeToTrigger) {}
+        : TimeToTriggerPolicy(timeToTrigger), order_(std::move(order)) {}
 
     static std::vector<RatId> defaultOrder() {
         return { RatId::DSRC, RatId::WIFI, RatId::NR, RatId::LTE, RatId::SIXG };
     }
 
-    RatId select(RatId current, const RatMetricsVec &metrics) override {
+    RatId prefer(RatId current, const RatMetricsVec &metrics) const override {
         RatId best = RatId::NONE;
         for (RatId r : order_) {
             if (usable(r, metrics)) { best = r; break; }
         }
         // Stickiness: stay on current if still usable and not worse than best.
-        bool currentUsable = usable(current, metrics);
-        if (currentUsable && rank(current) <= rank(best))
+        if (usable(current, metrics) && rank(current) <= rank(best))
             best = current;
-        return confirm_.apply(current, best, currentUsable, metrics);
+        return best;
     }
 
     const char *name() const override { return "CoveragePriority"; }
@@ -44,7 +43,6 @@ class CoveragePriorityPolicy : public IRatSelectionPolicy {
         return (int)order_.size() + 1;
     }
     std::vector<RatId> order_;
-    SwitchConfirmation confirm_;
 };
 
 } // namespace multiratvanet

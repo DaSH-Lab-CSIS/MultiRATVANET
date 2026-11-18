@@ -1,0 +1,14 @@
+# Extra routes of the core router (INET routing file; omnetpp.ini loads it).
+#
+# Cars give themselves 30.x.x.1 on DSRC and 20.x.x.1 on WiFi (MultiRatAppManager). The router
+# reaches them directly on the LAN of that RAT: DSRC is its eth0, WiFi its eth1. Without these
+# routes the server's replies to a car's DSRC or WiFi address go to the cellular core and are
+# lost, and nothing ever comes back to a car over DSRC or WiFi.
+
+ifconfig:
+ifconfigend.
+
+route:
+30.0.0.0    *    255.0.0.0    H    0    eth0
+20.0.0.0    *    255.0.0.0    H    0    eth1
+routeend.

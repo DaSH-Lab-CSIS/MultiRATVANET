@@ -4,20 +4,22 @@
 #
 #   dash/run-experiment.sh --scenario highway --policy ensemble --time 120s --ensemble-weight-sinr 2
 #   dash/run-experiment.sh --scenario urbangrid --policy ml --decision-interval 0.2s --name tuned
-#   dash/run-experiment.sh --config DsrcLteHandover --set '*.car[*].multiRatAppManager.lteHandoverDelay=60ms'
+#   dash/run-experiment.sh --config DsrcNrHandover --set '*.car[*].multiRatAppManager.nrHandoverDelay=60ms'
 #
 # Experiment
-#   --scenario S            highway (default) | highway_dsrc_lte | highway_v2v | highway_cv2x | urbangrid | electroniccity
-#   --policy P              coverage_priority (default) | sinr | latency_qos | load | ml | ensemble
+#   --scenario S            highway (default) | highway_dsrc_nr | highway_v2v | highway_cv2x | urbangrid | electroniccity
+#   --policy P              coverage_priority (default) | sinr | latency_qos | load | ml | ensemble | example_split
 #   --config NAME           use this omnetpp.ini config directly (overrides --scenario/--policy mapping)
 #   --time T                simulated time, e.g. 120s (default: the scenario's default)
 #   --seed N                OMNeT++ seed set (default 0)
 #   --name LABEL            label added to the run folder name
 # Scenario parameters (sent only when given; otherwise omnetpp.ini applies)
 #   --decision-interval T   RAT re-evaluation interval, e.g. 0.5s
-#   --dsrc-range D  --wifi-range D  --nr-range D  --lte-range D      coverage radius, e.g. 300m
-#   --lte-interface NAME  --nr-interface NAME                         IP interface names (default "cellular")
-#   --dsrc-handover-delay T  --lte-handover-delay T                   (highway_dsrc_lte)
+#   --time-to-trigger T     how long a better RAT must stay preferred before the switch, e.g. 1s
+#   --probe-interval T      how often each car probes every linked RAT, e.g. 100ms
+#   --dsrc-range D  --wifi-range D  --nr-range D                     coverage radius, e.g. 300m (signalSource "proxy" only)
+#   --nr-interface NAME                                               IP interface name (default "cellular")
+#   --dsrc-handover-delay T  --nr-handover-delay T                    (highway_dsrc_nr)
 # Ensemble policy parameters
 #   --ensemble-weight-coverage W  --ensemble-weight-sinr W  --ensemble-weight-latency W
 #   --ensemble-weight-load W      --ensemble-stickiness S
@@ -38,7 +40,7 @@ REPORT=1 DRY=0
 PARAMS=()     # "label=value" for the run record
 OVERRIDES=()  # --<ini-key>=<value> passed to the simulation
 
-usage() { sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+usage() { sed -n '2,31p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 die() { echo "error: $*" >&2; exit 2; }
 
 # param FLAG-LABEL INI-KEY TYPE VALUE
@@ -70,14 +72,14 @@ while [ $# -gt 0 ]; do
         --dry-run)  DRY=1 ;;
         -h|--help)  usage ;;
         --decision-interval)        param decision_interval        "$M.decisionInterval"        duration "$val" ;;
+        --time-to-trigger)          param time_to_trigger          "$M.timeToTrigger"           duration "$val" ;;
+        --probe-interval)           param probe_interval           "*.car[*].app[2].probeInterval" duration "$val" ;;
         --dsrc-range)               param dsrc_range               "$C.dsrcRange"               distance "$val" ;;
         --wifi-range)               param wifi_range               "$C.wifiRange"               distance "$val" ;;
         --nr-range)                 param nr_range                 "$C.nrRange"                 distance "$val" ;;
-        --lte-range)                param lte_range                "$C.lteRange"                distance "$val" ;;
-        --lte-interface)            param lte_interface            "$M.lteInterface"            string   "$val" ;;
         --nr-interface)             param nr_interface             "$M.nrInterface"             string   "$val" ;;
         --dsrc-handover-delay)      param dsrc_handover_delay      "$M.dsrcHandoverDelay"       duration "$val" ;;
-        --lte-handover-delay)       param lte_handover_delay       "$M.lteHandoverDelay"        duration "$val" ;;
+        --nr-handover-delay)        param nr_handover_delay        "$M.nrHandoverDelay"         duration "$val" ;;
         --ensemble-weight-coverage) param ensemble_weight_coverage "$M.ensembleWeightCoverage"  double   "$val" ;;
         --ensemble-weight-sinr)     param ensemble_weight_sinr     "$M.ensembleWeightSinr"      double   "$val" ;;
         --ensemble-weight-latency)  param ensemble_weight_latency  "$M.ensembleWeightLatency"   double   "$val" ;;
@@ -91,7 +93,8 @@ done
 # scenario -> base config, default sim time (from dash/manifest.yaml)
 case $SCENARIO in
     highway)          base=MultiRatHighway_Base; deftime=300s ;;
-    highway_dsrc_lte) base=DsrcLteHandover;      deftime=300s ;;
+    highway_dsrc_nr|highway_dsrc_lte)   # highway_dsrc_lte: old name, same scenario
+                      SCENARIO=highway_dsrc_nr; base=DsrcNrHandover; deftime=300s ;;
     highway_v2v)      base=V2V;                  deftime=300s ;;
     highway_cv2x)     base=CV2X;                 deftime=300s ;;
     urbangrid)        base=UrbanGrid_Base;       deftime=120s ;;
@@ -100,7 +103,7 @@ case $SCENARIO in
 esac
 case $POLICY in
     coverage_priority) pol=CoveragePriority ;; sinr) pol=Sinr ;; latency_qos) pol=LatencyQos ;;
-    load) pol=Load ;; ml) pol=Ml ;; ensemble) pol=Ensemble ;;
+    load) pol=Load ;; ml) pol=Ml ;; ensemble) pol=Ensemble ;; example_split) pol=ExampleSplit ;;
     *) die "unknown policy $POLICY" ;;
 esac
 
@@ -108,8 +111,9 @@ esac
 # from the scenario's base config plus a policy override
 if [ -z "$CONFIG" ]; then
     case "$SCENARIO/$POLICY" in
+        highway/example_split)           CONFIG=$base; OVERRIDES=("--$M.policy=\"$pol\"" "${OVERRIDES[@]}") ;;
         highway/*)                       CONFIG=$pol ;;
-        highway_dsrc_lte/coverage_priority) CONFIG=DsrcLteHandover ;;
+        highway_dsrc_nr/coverage_priority) CONFIG=DsrcNrHandover ;;
         urbangrid/coverage_priority)     CONFIG=UrbanGrid_CoveragePriority ;;
         urbangrid/ensemble)              CONFIG=UrbanGrid_Ensemble ;;
         urbangrid/ml)                    CONFIG=UrbanGrid_ML ;;

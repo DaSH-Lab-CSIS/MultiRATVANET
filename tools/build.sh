@@ -1,6 +1,6 @@
 #!/bin/bash
 # MultiRATVANET Build Script for Linux/macOS
-# Usage: ./build.sh [--test] [--clean]
+# Usage: ./build.sh [--clean]
 
 set -e
 
@@ -58,12 +58,4 @@ if [[ -f "out/clang-release/framework" ]]; then
 else
     echo "ERROR: Build completed but output not found!"
     exit 1
-fi
-
-# Run tests if --test flag
-if [[ "$1" == "--test" ]]; then
-    echo ""
-    echo "Running unit tests..."
-    cd "$ROOT_DIR/tests/unit"
-    make -j4
 fi
