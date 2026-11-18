@@ -399,6 +399,35 @@ const cModule *RatCoverageMonitor::servingCellMac(int rat, double *bandwidthMHz)
     return binder->getMacByNodeId(cell);
 }
 
+bool RatCoverageMonitor::getPosition(double &x, double &y) const
+{
+    if (!selfMobility_)
+        return false;
+    inet::Coord p = selfMobility_->getCurrentPosition();
+    x = p.x;
+    y = p.y;
+    return true;
+}
+
+std::string RatCoverageMonitor::servingNodeName(RatId r) const
+{
+    int rat = (int)r;
+    if (r == RatId::LTE || r == RatId::NR) {
+        double bw = 0;
+        const cModule *mac = servingCellMac(rat, &bw);
+        const cModule *node = mac ? inet::findContainingNode(mac) : nullptr;
+        return node ? node->getFullName() : "";
+    }
+    if (r != RatId::DSRC && r != RatId::WIFI)
+        return "";
+    const std::string &nic = r == RatId::DSRC ? dsrcNic_ : wifiNic_;
+    auto mib = dynamic_cast<inet::ieee80211::Ieee80211Mib *>(getParentModule()->findModuleByPath(("." + nic + ".mib").c_str()));
+    if (!mib || !mib->bssStationData.isAssociated)
+        return "";
+    auto it = infraByMac_.find(mib->bssData.bssid.getInt());
+    return it == infraByMac_.end() ? "" : it->second;
+}
+
 int RatCoverageMonitor::ratOfWlan(const cModule *nic) const
 {
     if (!nic)
@@ -445,9 +474,12 @@ void RatCoverageMonitor::receiveSignal(cComponent *source, simsignal_t id, cObje
     if (!icontains(txType, cfg_[rat].infraType))
         return;
 
+    auto txIface = dynamic_cast<const inet::NetworkInterface *>(txModule->getParentModule());
+    if (txIface)
+        infraByMac_[txIface->getMacAddress().getInt()] = txNode->getFullName();
+
     // While associated, the car can only send through its own AP/RSU: ignore the others' beacons.
     auto mib = dynamic_cast<inet::ieee80211::Ieee80211Mib *>(receiverModule->getParentModule()->getSubmodule("mib"));
-    auto txIface = dynamic_cast<const inet::NetworkInterface *>(txModule->getParentModule());
     if (mib && mib->bssStationData.isAssociated && txIface && txIface->getMacAddress() != mib->bssData.bssid)
         return;
 

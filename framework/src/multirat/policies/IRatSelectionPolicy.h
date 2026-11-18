@@ -17,6 +17,8 @@
 #define MULTIRATVANET_IRATSELECTIONPOLICY_H
 
 #include <algorithm>
+#include <cstdio>
+#include <string>
 
 #include "base/PolicyTypes.h"
 #include "base/RatTypes.h"
@@ -45,13 +47,18 @@ class SwitchConfirmation {
             since_ = now;
         }
         // tolerance: 'now' is a sum of refresh intervals, so 1.0 s can arrive as 0.9999999
-        if (now - since_ < seconds_ - 1e-9)
+        waited_ = now - since_;
+        if (waited_ < seconds_ - 1e-9)
             return current;
         candidate_ = RatId::NONE;
         return wanted;
     }
     void setSeconds(double seconds) { seconds_ = seconds; }
+    double seconds() const { return seconds_; }
+    RatId pending() const { return candidate_; }  // RAT waiting out the time-to-trigger, or NONE
+    double waited() const { return waited_; }     // how long it has been preferred so far (s)
   private:
+    double waited_ = 0;
     double seconds_;
     RatId candidate_ = RatId::NONE;
     double since_ = 0;
@@ -122,10 +129,55 @@ class TimeToTriggerPolicy : public IRatSelectionPolicy {
     }
 
     PolicyResponse decide(const PolicyRequest &request) override {
-        return PolicyResponse(select(request.connection.currentRat, request.rats));
+        RatId current = request.connection.currentRat;
+        RatId wanted = prefer(current, request.rats);
+        PolicyResponse response(select(current, request.rats));
+        explain(response, current, wanted, request.rats);
+        return response;
     }
 
   protected:
+    // Why the decision came out as it did, for the decision log (PolicyResponse::branch/reason):
+    //   none   no usable RAT          start  first connection     lost  current RAT stopped working
+    //   best   already on the top pick                            margin top pick not better by enough
+    //   wait   better RAT, time-to-trigger still running          switch better for long enough
+    // The top pick is prefer() without a current RAT, i.e. before the policy's keep-current rule.
+    virtual void explain(PolicyResponse &out, RatId current, RatId wanted, const RatMetricsVec &metrics) const {
+        bool currentUsable = usable(current, metrics);
+        if (wanted == RatId::NONE && !currentUsable)
+            out.branch = "none";
+        else if (current == RatId::NONE)
+            out.branch = "start";
+        else if (!currentUsable)
+            out.branch = "lost";
+        else if (wanted == current || wanted == RatId::NONE) {
+            RatId top = prefer(RatId::NONE, metrics);
+            if (top == current || top == RatId::NONE || !usable(top, metrics))
+                out.branch = "best";
+            else {
+                out.branch = "margin";
+                std::string note = marginNote(current, top, metrics);
+                out.reason = std::string(ratName(top)) + (note.empty() ? "" : " " + note);
+            }
+        }
+        else if (out.rat == current || out.rat == RatId::NONE) {
+            out.branch = "wait";
+            char buf[64];
+            if (confirm_.pending() == wanted)
+                snprintf(buf, sizeof buf, "%s for %.1f of %.1f s", ratName(wanted), confirm_.waited(), confirm_.seconds());
+            else
+                snprintf(buf, sizeof buf, "%s", ratName(wanted));
+            out.reason = buf;
+        }
+        else
+            out.branch = "switch";
+    }
+
+    // For a "margin" outcome: how much better the top pick was and what the policy needs, e.g.
+    // "+1.2 dB, needs +3".
+    virtual std::string marginNote(RatId current, RatId top, const RatMetricsVec &metrics) const { return ""; }
+
+
     SwitchConfirmation confirm_;
 };
 

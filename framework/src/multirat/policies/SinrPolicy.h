@@ -39,6 +39,14 @@ class SinrPolicy : public TimeToTriggerPolicy {
 
     const char *name() const override { return "Sinr"; }
 
+  protected:
+    std::string marginNote(RatId current, RatId top, const RatMetricsVec &metrics) const override {
+        const auto &c = metrics[ratIndex(current)], &t = metrics[ratIndex(top)];
+        char buf[48];
+        snprintf(buf, sizeof buf, "%+.1f dB, needs +%g", (t.sinrDb - t.minSinrDb) - (c.sinrDb - c.minSinrDb), marginDb_);
+        return buf;
+    }
+
   private:
     double marginDb_;
 };

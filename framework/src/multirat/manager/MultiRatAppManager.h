@@ -5,6 +5,7 @@
 #define MULTIRATVANET_MULTIRATAPPMANAGER_H
 
 #include <omnetpp.h>
+#include <fstream>
 #include <map>
 #include <memory>
 #include <string>
@@ -55,6 +56,8 @@ class MultiRatAppManager : public omnetpp::cSimpleModule
 
   private:
     void decide();
+    void logDecision(RatId before, const PolicyResponse &response, const RatMetricsVec &metrics);
+    std::shared_ptr<std::ofstream> decisionLog_;  // CSV shared by all cars of the run (decisionLog parameter)
     PolicyRequest buildRequest();         // what the vehicle knows now
     void attach(RatId target);            // initial RAT selection (no handover cost)
     void initiateHandover(RatId target);  // start a make-before-break switch

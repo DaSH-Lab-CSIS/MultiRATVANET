@@ -17,6 +17,9 @@ dash/mrv run Sinr --sim-time-limit=120s
 
 # Run an experiment with parameters, then open results/report.html
 dash/run-experiment.sh --scenario highway --policy ensemble --time 120s --ensemble-weight-sinr 2
+
+# Compare every policy with the one-RAT baselines (the test bench), against the reference numbers
+bench/run.sh --against bench/reference
 ```
 
 Use `DOCKER="sudo docker"` in front of any of these if your user is not in the `docker` group.
@@ -26,6 +29,7 @@ Use `DOCKER="sudo docker"` in front of any of these if your user is not in the `
 - **[Getting Started](docs/GETTING_STARTED.md)** — build and first run, with or without Docker
 - **[Policy Reference](docs/POLICY_REFERENCE.md)** — writing a RAT selection policy: inputs, outputs, example
 - **[Architecture](docs/ARCHITECTURE.md)** — modules, policies, metrics, scenarios, parameters
+- **[Test bench](bench/README.md)** — the standard comparison of all policies and the one-RAT baselines
 - **[Toolchain image](docker/base/README.md)** — the pinned base image and its patches
 
 ## Features
@@ -68,6 +72,7 @@ simulations/
 sumo/                     Source files the SUMO scenarios were generated from
 tools/                    build.sh, run.sh, sumo-launchd.sh
 dash/                     Docker image, experiment runner, HTML report, dashboard manifest
+bench/                    Test bench: all policies vs one-RAT baselines, and the reference results
 docker/base/              Pinned toolchain image (OMNeT++, INET, Veins, Simu5G, SUMO) and patches
 docs/                     Documentation
 ```
@@ -83,6 +88,7 @@ docs/                     Documentation
 | `dash/mrv shell` | Bash inside the image, toolchain on PATH. |
 | `dash/mrv versions` | Toolchain versions and repo commit baked into the image. |
 | `dash/run-experiment.sh --help` | Runs one experiment with every tunable as a flag (scenario, policy, time, seed, ranges, ensemble weights, `--set KEY=VALUE`), saves `run.json` and `console.log`, and rebuilds `results/report.html`. |
+| `bench/run.sh --help` | The test bench: runs the five policies and the DSRC-only, WiFi-only and 5G-only baselines with three seeds and prints one comparison table, optionally against an earlier bench. See [bench/README.md](bench/README.md). |
 
 `results/report.html` lists every run with its scenario and config, final results (delivery, throughput, delay, handovers), time series and console log. Open it in a browser; `report.html#<run-folder>` links to one run.
 
