@@ -105,6 +105,9 @@ algorithms:
   - {id: ensemble,          description: "Weighted vote of all base policies",                   overrides: {"*.car[*].multiRatAppManager.policy": {type: string, value: Ensemble}}}
   - {id: ml,                description: "Learned / federated controller hook (no controller attached: decides like coverage_priority)",                 overrides: {"*.car[*].multiRatAppManager.policy": {type: string, value: Ml}}}
   - {id: example_split,     description: "Template, not a benchmark policy: safety on the fastest short-range RAT, infotainment on NR", overrides: {"*.car[*].multiRatAppManager.policy": {type: string, value: ExampleSplit}}}
+  - {id: only_dsrc,         description: "Baseline: DSRC only (test bench)",                      overrides: {"*.car[*].multiRatAppManager.policy": {type: string, value: OnlyDsrc}}}
+  - {id: only_wifi,         description: "Baseline: WiFi only (test bench)",                      overrides: {"*.car[*].multiRatAppManager.policy": {type: string, value: OnlyWifi}}}
+  - {id: only_nr,           description: "Baseline: 5G-NR only (test bench)",                     overrides: {"*.car[*].multiRatAppManager.policy": {type: string, value: OnlyNr}}}
 
 # ---------------------------------------------------------------------------------------------
 # Explicit runs: (scenario, algorithm) -> omnetpp config. These are presets: they carry scenario-specific

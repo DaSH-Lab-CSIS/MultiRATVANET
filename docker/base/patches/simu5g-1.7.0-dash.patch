@@ -116,3 +116,20 @@
  }
  
  void LteMacEnb::initialize(int stage)
+--- a/src/simu5g/stack/mac/LteMacUe.cc
++++ b/src/simu5g/stack/mac/LteMacUe.cc
+@@ -602,6 +602,14 @@
+                 txBuf = hit->second;
+             }
+             else {
++                // DaSH patch: a UE with no serving cell (out of every cell's range) has no MAC to
++                // send to, and createTxHarqBuffer() would cast a null MAC; drop the PDU
++                if (dir == UL && binder_->getMacByNodeId(cellId_) == nullptr) {
++                    EV << "LteMacUe::macPduMake - no serving cell, UL PDU dropped" << endl;
++                    delete pit.second;
++                    pit.second = nullptr;
++                    continue;
++                }
+                 // the tx buffer does not exist yet for this mac node id, create one
+                 // FIXME: hb is never deleted
+                 LteHarqBufferTx *hb = createTxHarqBuffer(destId, dir);

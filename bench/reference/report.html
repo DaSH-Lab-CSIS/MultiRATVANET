@@ -1,0 +1,1318 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MultiRATVANET runs</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<style>
+:root {
+  color-scheme: light;
+  --surface-0: #f5f4f1; --surface-1: #fcfcfb; --surface-2: #f0efeb; --border: #e3e1dc; --grid: #ecebe7;
+  --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #7b7a75;
+  --good: #1a7f37; --bad: #c62828; --accent: #2a78d6;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #8f8e86;
+  --ground: #e6e8e1; --road: #5d6064;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --surface-0: #111110; --surface-1: #1a1a19; --surface-2: #222220; --border: #2e2e2b; --grid: #262624;
+    --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
+    --good: #4cc26a; --bad: #ff6b6b; --accent: #3987e5;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #8f8e86;
+    --ground: #1d201c; --road: #6b6f74;
+  }
+  :root:not([data-theme="light"]) .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9); }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-0: #111110; --surface-1: #1a1a19; --surface-2: #222220; --border: #2e2e2b; --grid: #262624;
+  --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
+  --good: #4cc26a; --bad: #ff6b6b; --accent: #3987e5;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #8f8e86;
+  --ground: #1d201c; --road: #6b6f74;
+}
+:root[data-theme="dark"] .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9); }
+* { box-sizing: border-box; }
+html { scroll-padding-top: 110px; }
+body { margin: 0; background: var(--surface-0); color: var(--text-primary);
+       font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 16px; }
+header.top { position: sticky; top: 0; z-index: 1000; background: color-mix(in srgb, var(--surface-0) 92%, transparent);
+             backdrop-filter: blur(6px); border-bottom: 1px solid var(--border); }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding-top: 12px; padding-bottom: 8px; }
+.bar h1 { font-size: 17px; margin: 0; white-space: nowrap; }
+.picker { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+.picker select { flex: 1; min-width: 0; max-width: 560px; }
+nav { display: flex; gap: 4px 18px; flex-wrap: wrap; padding-bottom: 8px; font-size: 13px; }
+nav a { color: var(--text-secondary); text-decoration: none; }
+nav a:hover { color: var(--text-primary); }
+main { padding-top: 8px; padding-bottom: 64px; }
+h2 { font-size: 16px; margin: 36px 0 2px; }
+h3 { font-size: 13px; margin: 0 0 8px; font-weight: 600; }
+.sub { color: var(--text-secondary); margin: 0 0 12px; max-width: 80ch; }
+.intro { color: var(--text-secondary); margin: 14px 0 0; max-width: 90ch; }
+.muted { color: var(--text-muted); }
+select, button, input[type=range] { font: inherit; }
+select { padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-1); color: var(--text-primary); }
+button { padding: 5px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-1); color: var(--text-primary); cursor: pointer; }
+button:hover { border-color: var(--text-muted); }
+button.on { background: var(--text-primary); color: var(--surface-1); border-color: var(--text-primary); }
+.pill { font-size: 12px; padding: 2px 8px; border-radius: 99px; border: 1px solid currentColor; white-space: nowrap; }
+.st-ok { color: var(--good); } .st-failed { color: var(--bad); } .st-none { color: var(--text-muted); }
+.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; min-width: 0; }
+.grid3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 330px), 1fr)); gap: 12px; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 480px), 1fr)); gap: 12px; }
+.stack > * + * { margin-top: 12px; }
+dl.kv { display: grid; grid-template-columns: max-content 1fr; gap: 5px 14px; margin: 0; font-size: 13px; }
+dl.kv dt { color: var(--text-secondary); } dl.kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+dl.kv dd ul { margin: 0; padding-left: 16px; }
+.mono { font-family: var(--mono); font-size: 12px; }
+.note { font-size: 12px; color: var(--text-secondary); margin: 10px 0 0; }
+details > summary { cursor: pointer; color: var(--text-secondary); font-size: 12px; margin-top: 10px; }
+pre.log { font: 12px/1.4 var(--mono); background: var(--surface-0); border: 1px solid var(--border); border-radius: 8px;
+          padding: 10px 12px; overflow: auto; max-height: 420px; margin: 8px 0 0; white-space: pre; }
+.cmd { display: flex; align-items: stretch; gap: 8px; margin-bottom: 12px; }
+.cmd pre { flex: 1; min-width: 0; margin: 0; font: 13px/1.5 var(--mono); padding: 10px 12px; background: var(--surface-1);
+           border: 1px solid var(--border); border-radius: 8px; overflow-x: auto; white-space: pre; }
+.cmd button { white-space: nowrap; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; vertical-align: top; }
+th { color: var(--text-secondary); font-weight: 600; font-size: 12px; }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: 0; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0 0 6px; font-size: 12px; color: var(--text-secondary); align-items: center; }
+.key { display: inline-block; width: 14px; height: 2px; border-radius: 1px; vertical-align: middle; margin-right: 6px; }
+.key.box { width: 10px; height: 10px; border-radius: 2px; }
+/* map */
+#map { height: 420px; border-radius: 8px; border: 1px solid var(--border); background: var(--ground); }
+.mapbar { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; margin-bottom: 10px; font-size: 13px; }
+.seg { display: inline-flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+.seg button { padding: 3px 9px; font-size: 12px; }
+.timebar { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 240px; }
+.timebar input { flex: 1; min-width: 80px; }
+.timebar output { font-variant-numeric: tabular-nums; min-width: 72px; color: var(--text-secondary); font-size: 12px; }
+.leaflet-tooltip.lbl { background: transparent; border: 0; box-shadow: none; padding: 0; font: 600 11px system-ui, sans-serif;
+                       color: var(--text-primary); text-shadow: 0 0 3px var(--surface-1), 0 0 3px var(--surface-1); }
+.leaflet-tooltip.lbl::before { display: none; }
+.leaflet-container { font: 12px system-ui, sans-serif; }
+/* policy tree */
+.tree { list-style: none; margin: 0; padding: 0; }
+.tree li { display: grid; grid-template-columns: 24px 1fr; gap: 0 10px; }
+.tree .num { width: 22px; height: 22px; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--border);
+             font-size: 11px; display: grid; place-items: center; color: var(--text-secondary); }
+.tree .rail { grid-column: 1; justify-self: center; width: 1px; background: var(--border); min-height: 14px; }
+.tree .q { font-weight: 500; padding-top: 1px; }
+.tree .cont { grid-column: 2; font-size: 11px; color: var(--text-muted); padding: 2px 0 4px; }
+.exit { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; margin: 4px 0 2px; padding: 5px 9px; border-radius: 7px;
+        background: var(--surface-2); font-size: 13px; }
+.exit .when { font-weight: 600; font-size: 12px; color: var(--text-secondary); }
+.exit .cnt { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--text-secondary); font-size: 12px; }
+.exit.hot { background: color-mix(in srgb, var(--accent) 14%, var(--surface-2)); }
+.toppick { margin: 0 0 12px; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--surface-2); border-radius: 0 6px 6px 0; font-size: 13px; }
+/* decision table */
+.tbar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-bottom: 8px; font-size: 13px; }
+#turns td.rat { line-height: 1.25; }
+#turns td.rat small, #turns td small { display: block; color: var(--text-muted); font-size: 11px; }
+#turns td.off { color: var(--text-muted); }
+#turns tbody tr.row { cursor: pointer; }
+#turns tbody tr.row:hover { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+#turns tr.changed td.pick { font-weight: 600; }
+#turns tr.more td { background: var(--surface-2); white-space: normal; }
+.why-switch, .why-lost, .why-start { color: var(--accent); font-weight: 500; }
+/* results */
+.stats { display: flex; flex-wrap: wrap; gap: 14px 28px; }
+.stat .v { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stat .v small { font-size: 13px; font-weight: 500; color: var(--text-secondary); margin-left: 2px; }
+.stat .l { color: var(--text-secondary); font-size: 12px; }
+.stat .d { color: var(--text-muted); font-size: 12px; }
+.sharebar { display: flex; height: 14px; border-radius: 4px; overflow: hidden; margin: 6px 0 8px; background: var(--surface-2); }
+.sharebar span { height: 100%; }
+.chart { position: relative; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart .axis text { fill: var(--text-muted); font-size: 11px; }
+.chart .gridline { stroke: var(--grid); stroke-width: 1; }
+.chart .baseline { stroke: var(--border); stroke-width: 1; }
+.chart .hair { stroke: var(--text-muted); stroke-width: 1; }
+.tip { position: absolute; pointer-events: none; background: var(--surface-1); border: 1px solid var(--border);
+       border-radius: 8px; padding: 6px 9px; font-size: 12px; box-shadow: 0 2px 10px rgba(0,0,0,.12); white-space: nowrap; z-index: 2; }
+.tip .row { display: flex; align-items: center; gap: 6px; }
+.tip b { font-variant-numeric: tabular-nums; }
+.tip .ts { color: var(--text-muted); margin-bottom: 2px; }
+.empty { color: var(--text-muted); padding: 30px 0; text-align: center; }
+#history tbody tr { cursor: pointer; }
+#history tbody tr:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+#history tbody tr.sel { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+/* test bench page: the comparison only */
+body.bench .picker, body.bench nav, body.bench #s-history, body.bench #run { display: none; }
+/* compare */
+.hbar .lab { fill: var(--text-secondary); font-size: 12px; }
+.hbar .val { fill: var(--text-primary); font-size: 12px; font-variant-numeric: tabular-nums; }
+.hbar .whisk { stroke: var(--text-primary); stroke-width: 1.5; }
+.hbar .hit { fill: transparent; }
+.hbar .hit:hover { fill: color-mix(in srgb, var(--text-muted) 10%, transparent); }
+.hbar .sep { stroke: var(--border); stroke-dasharray: 3 3; }
+.filters { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 0 0 10px; }
+.filters select { max-width: 100%; }
+td.best { font-weight: 600; }
+#cmp-table tbody tr { cursor: pointer; }
+#cmp-table tbody tr:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+tr.base td:first-child { color: var(--text-secondary); }
+@media (max-width: 640px) { #map { height: 340px; } .stat .v { font-size: 19px; } dl.kv { grid-template-columns: 1fr; gap: 0 0; } dl.kv dd { margin-bottom: 6px; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap bar">
+    <h1>MultiRATVANET</h1>
+    <div class="picker"><label for="pick" class="muted">Run</label><select id="pick"></select><span id="status" class="pill"></span></div>
+  </div>
+  <nav class="wrap"><a href="#s-compare" id="nav-compare" hidden>Compare</a><a href="#s-run">Run</a><a href="#s-map">Map</a><a href="#s-policy">Policy</a><a href="#s-network">Network</a><a href="#s-results">Results</a><a href="#s-history">History</a></nav>
+</header>
+<main class="wrap">
+  <section id="s-compare" hidden></section>
+  <div id="run"></div>
+  <section id="s-history">
+    <h2>History</h2>
+    <p class="sub">Every run in <code>/home/vnet/vehicular-sim/multiratvanet/MultiRATVANET/bench-results/20261117T105944Z-standard</code>, newest first. Click one to open it. Page built <span id="gen"></span>.</p>
+    <div class="card scroll"><table id="history"></table></div>
+  </section>
+</main>
+
+<script id="data" type="application/json">{"generated":"2026-11-17T11:57:37+00:00","runs":[{"id":"20261117T110954Z-highway-only_nr-s2","meta":{"run_id":"20261117T110954Z-highway-only_nr-s2","scenario":"highway","policy":"only_nr","config":"MultiRatHighway_Base","command":"dash/run-experiment.sh --scenario highway --policy only_nr --time 120s --seed 2 --name s2 --set '**.vector-recording=false'","sim_time":"120s","seed":"2","name":"s2","params":["**.vector-recording=false"],"overrides":["--*.car[*].multiRatAppManager.policy=\"OnlyNr\"","--**.vector-recording=false","--seed-set=2"],"image":"multiratvanet:latest","image_id":"sha256:9feec50026fe7ec726be84a029d216ad706b4bea4b021eb02461a66bd9b87b3d","repo_commit":"d55ae08c331dbfa29bf7ee515487d4360127e2b6","who":"vnet","host":"anjuna3","started":"2026-11-17T11:09:54Z","finished":"2026-11-17T11:13:33Z","exit_code":0},"status":"ok","summary":{"vehicles":17,"classes":[{"name":"safety","direction":"car to server","sent":15268.0,"received":12483.0,"pdr":0.8175923500130993,"within_deadline":0.7790804296567986,"deadline_ms":100.0,"throughput_mbps":0.16644,"delay_mean_ms":40.4794741500729,"delay_max_ms":6115.785840744999},{"name":"infotainment","direction":"server to car","sent":69300.0,"received":56725.0,"pdr":0.8185425685425686,"within_deadline":0.8143145743145743,"deadline_ms":1000.0,"throughput_mbps":4.727083333333334,"delay_mean_ms":104.94495838414562,"delay_max_ms":6204.3639058829995}],"sent":84568.0,"received":69208.0,"pdr":0.8183710150411503,"throughput_mbps":4.8935233333333334,"delay_mean_ms":93.31736273488644,"delay_max_ms":6204.3639058829995,"handovers":0.0,"handovers_per_vehicle":0.0,"handovers_failed":0.0,"ping_pong":0.0,"connectivity":0.926908718002646,"outage_s":120.99999999999999,"interruption_count":0,"interruption_mean_ms":null,"interruption_max_ms":null,"interruption_lost":0.0,"shares":{"DSRC":0.0,"WiFi":0.0,"NR":1.0},"inputs":{"DSRC":{"SinrMargin":25.06118250535223,"Load":0.03089761538786247,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":0.5934821660424346},"WiFi":{"SinrMargin":24.70817220114606,"Load":0.029576967784161117,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":0.5797347324418342},"NR":{"SinrMargin":18.66794351017606,"Load":null,"Capacity":null,"LinkRate":15.941852493512064,"Latency":null,"ProbeRtt":61.07215038487223}}},"config":"MultiRatHighway_Base","started":"2026-11-17T11:09:54Z","sim_time":120.0,"cellular_merged":false,"decisions":{"count":3050,"branches":{"start":17,"best":2365,"lost":551,"none":117},"rat_stats":{"DSRC":{"usable":0.7163934426229508,"rate":24.0},"WiFi":{"usable":0.7567213114754099,"rate":24.0},"NR":{"usable":0.7809836065573771,"rate":24.97}}},"decision":{"policy":"OnlyNr","decisionInterval":"0.5s","handoverExecDelay":"0s","pingPongWindow":"2s","startTime":"0.5s","timeToTrigger":"1s","sinrSwitchMargin":"3dB","loadSwitchMargin":"0.15","latencyBudget":"0.1s","ensembleWeightCoverage":"1","ensembleWeightSinr":"1","ensembleWeightLatency":"1","ensembleWeightLoad":"1","ensembleStickiness":"1"}},{"id":"20261117T110924Z-highway-only_nr-s1","meta":{"run_id":"20261117T110924Z-highway-only_nr-s1","scenario":"highway","policy":"only_nr","config":"MultiRatHighway_Base","command":"dash/run-experiment.sh --scenario highway --policy only_nr --time 120s --seed 1 --name s1 --set '**.vector-recording=false'","sim_time":"120s","seed":"1","name":"s1","params":["**.vector-recording=false"],"overrides":["--*.car[*].multiRatAppManager.policy=\"OnlyNr\"","--**.vector-recording=false","--seed-set=1"],"image":"multiratvanet:latest","image_id":"sha256:9feec50026fe7ec726be84a029d216ad706b4bea4b021eb02461a66bd9b87b3d","repo_commit":"d55ae08c331dbfa29bf7ee515487d4360127e2b6","who":"vnet","host":"anjuna3","started":"2026-11-17T11:09:24Z","finished":"2026-11-17T11:13:00Z","exit_code":0},"status":"ok","summary":{"vehicles":17,"classes":[{"name":"safety","direction":"car to server","sent":15268.0,"received":13050.0,"pdr":0.8547288446423893,"within_deadline":0.8209326696358397,"deadline_ms":100.0,"throughput_mbps":0.174,"delay_mean_ms":38.17521991755709,"delay_max_ms":3158.13374085},{"name":"infotainment","direction":"server to car","sent":64450.0,"received":51907.0,"pdr":0.8053840186190846,"within_deadline":0.8010861132660978,"deadline_ms":1000.0,"throughput_mbps":4.3255833333333324,"delay_mean_ms":95.4124566025877,"delay_max_ms":3675.266078708}],"sent":79718.0,"received":64957.0,"pdr":0.8148347926440703,"throughput_mbps":4.499583333333333,"delay_mean_ms":83.9133735362569,"delay_max_ms":3675.266078708,"handovers":0.0,"handovers_per_vehicle":0.0,"handovers_failed":0.0,"ping_pong":0.0,"connectivity":0.9202437138225771,"outage_s":134.39999999999998,"interruption_count":0,"interruption_mean_ms":null,"interruption_max_ms":null,"interruption_lost":0.0,"shares":{"DSRC":0.0,"WiFi":0.0,"NR":1.0},"inputs":{"DSRC":{"SinrMargin":25.046114130303415,"Load":0.030947427650700583,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":0.6231912051778307},"WiFi":{"SinrMargin":24.692362495800822,"Load":0.02960493834462718,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":0.615911521398463},"NR":{"SinrMargin":18.890095633422003,"Load":null,"Capacity":null,"LinkRate":16.160302959738175,"Latency":null,"ProbeRtt":54.41236628854006}}},"config":"MultiRatHighway_Base","started":"2026-11-17T11:09:24Z","sim_time":120.0,"cellular_merged":false,"decisions":{"count":3051,"branches":{"start":17,"best":2351,"lost":577,"none":106},"rat_stats":{"DSRC":{"usable":0.717469682071452,"rate":24.0},"WiFi":{"usable":0.7564732874467388,"rate":24.0},"NR":{"usable":0.7761389708292363,"rate":24.97}}},"decision":{"policy":"OnlyNr","decisionInterval":"0.5s","handoverExecDelay":"0s","pingPongWindow":"2s","startTime":"0.5s","timeToTrigger":"1s","sinrSwitchMargin":"3dB","loadSwitchMargin":"0.15","latencyBudget":"0.1s","ensembleWeightCoverage":"1","ensembleWeightSinr":"1","ensembleWeightLatency":"1","ensembleWeightLoad":"1","ensembleStickiness":"1"}},{"id":"20261117T110918Z-highway-only_nr-s0","meta":{"run_id":"20261117T110918Z-highway-only_nr-s0","scenario":"highway","policy":"only_nr","config":"MultiRatHighway_Base","command":"dash/run-experiment.sh --scenario highway --policy only_nr --time 120s --seed 0 --name s0 --set '**.vector-recording=false'","sim_time":"120s","seed":"0","name":"s0","params":["**.vector-recording=false"],"overrides":["--*.car[*].multiRatAppManager.policy=\"OnlyNr\"","--**.vector-recording=false","--seed-set=0"],"image":"multiratvanet:latest","image_id":"sha256:9feec50026fe7ec726be84a029d216ad706b4bea4b021eb02461a66bd9b87b3d","repo_commit":"d55ae08c331dbfa29bf7ee515487d4360127e2b6","who":"vnet","host":"anjuna3","started":"2026-11-17T11:09:18Z","finished":"2026-11-17T11:12:53Z","exit_code":0},"status":"ok","summary":{"vehicles":17,"classes":[{"name":"safety","direction":"car to server","sent":15268.0,"received":12811.0,"pdr":0.8390751899397433,"within_deadline":0.8076368876080692,"deadline_ms":100.0,"throughput_mbps":0.17081333333333332,"delay_mean_ms":37.506319301171644,"delay_max_ms":3781.218267925},{"name":"infotainment","direction":"server to car","sent":66730.0,"received":53803.0,"pdr":0.8062790349168291,"within_deadline":0.8021429641840252,"deadline_ms":1000.0,"throughput_mbps":4.483583333333333,"delay_mean_ms":98.97133308008924,"delay_max_ms":7093.315245121001}],"sent":81998.0,"received":66614.0,"pdr":0.8123856679431206,"throughput_mbps":4.654396666666666,"delay_mean_ms":87.15057030467095,"delay_max_ms":7093.315245121001,"handovers":0.0,"handovers_per_vehicle":0.0,"handovers_failed":0.0,"ping_pong":0.0,"connectivity":0.9334346663793164,"outage_s":111.19999999999999,"interruption_count":0,"interruption_mean_ms":null,"interruption_max_ms":null,"interruption_lost":0.0,"shares":{"DSRC":0.0,"WiFi":0.0,"NR":1.0},"inputs":{"DSRC":{"SinrMargin":25.046051763459243,"Load":0.031097927893962884,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":0.5859562138467947},"WiFi":{"SinrMargin":24.675375241663062,"Load":0.02958284604288941,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":0.5832202643064441},"NR":{"SinrMargin":18.84755656516872,"Load":null,"Capacity":null,"LinkRate":16.057209967935798,"Latency":null,"ProbeRtt":63.805730959717586}}},"config":"MultiRatHighway_Base","started":"2026-11-17T11:09:18Z","sim_time":120.0,"cellular_merged":false,"decisions":{"count":3049,"branches":{"start":17,"best":2445,"lost":527,"none":60},"rat_stats":{"DSRC":{"usable":0.724171859626107,"rate":24.0},"WiFi":{"usable":0.7566415218104297,"rate":24.0},"NR":{"usable":0.8074778615939653,"rate":24.97}}},"decision":{"policy":"OnlyNr","decisionInterval":"0.5s","handoverExecDelay":"0s","pingPongWindow":"2s","startTime":"0.5s","timeToTrigger":"1s","sinrSwitchMargin":"3dB","loadSwitchMargin":"0.15","latencyBudget":"0.1s","ensembleWeightCoverage":"1","ensembleWeightSinr":"1","ensembleWeightLatency":"1","ensembleWeightLoad":"1","ensembleStickiness":"1"}},{"id":"20261117T110916Z-highway-only_wifi-s2","meta":{"run_id":"20261117T110916Z-highway-only_wifi-s2","scenario":"highway","policy":"only_wifi","config":"MultiRatHighway_Base","command":"dash/run-experiment.sh --scenario highway --policy only_wifi --time 120s --seed 2 --name s2 --set '**.vector-recording=false'","sim_time":"120s","seed":"2","name":"s2","params":["**.vector-recording=false"],"overrides":["--*.car[*].multiRatAppManager.policy=\"OnlyWifi\"","--**.vector-recording=false","--seed-set=2"],"image":"multiratvanet:latest","image_id":"sha256:9feec50026fe7ec726be84a029d216ad706b4bea4b021eb02461a66bd9b87b3d","repo_commit":"d55ae08c331dbfa29bf7ee515487d4360127e2b6","who":"vnet","host":"anjuna3","started":"2026-11-17T11:09:16Z","finished":"2026-11-17T11:13:32Z","exit_code":0},"status":"ok","summary":{"vehicles":17,"classes":[{"name":"safety","direction":"car to server","sent":15268.0,"received":11632.0,"pdr":0.7618548598375687,"within_deadline":0.7600864553314121,"deadline_ms":100.0,"throughput_mbps":0.15509333333333333,"delay_mean_ms":5.1705891722450135,"delay_max_ms":4448.2999762},{"name":"infotainment","direction":"server to car","sent":64900.0,"received":48688.0,"pdr":0.7502003081664098,"within_deadline":0.7495069337442218,"deadline_ms":1000.0,"throughput_mbps":4.057333333333333,"delay_mean_ms":49.555414125048976,"delay_max_ms":3586.4660424360004}],"sent":80168.0,"received":60320.0,"pdr":0.7524199181718392,"throughput_mbps":4.2124266666666665,"delay_mean_ms":40.99632453865946,"delay_max_ms":4448.2999762,"handovers":0.0,"handovers_per_vehicle":0.0,"handovers_failed":0.0,"ping_pong":0.0,"connectivity":0.9178096216415811,"outage_s":137.10000000000002,"interruption_count":0,"interruption_mean_ms":null,"interruption_max_ms":null,"interruption_lost":0.0,"shares":{"DSRC":0.0,"WiFi":1.0,"NR":0.0},"inputs":{"DSRC":{"SinrMargin":25.055661181888354,"Load":0.030908228465371414,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":0.6302660676758977},"WiFi":{"SinrMargin":24.563499997466643,"Load":0.3051953660200177,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":1.783597613044706},"NR":{"SinrMargin":19.02957053674538,"Load":null,"Capacity":null,"LinkRate":16.288085971849256,"Latency":null,"ProbeRtt":61.269737539285586}}},"config":"MultiRatHighway_Base","started":"2026-11-17T11:09:16Z","sim_time":120.0,"cellular_merged":false,"decisions":{"count":3049,"branches":{"start":17,"best":2293,"lost":659,"none":80},"rat_stats":{"DSRC":{"usable":0.7179403082978025,"rate":24.0},"WiFi":{"usable":0.7576254509675303,"rate":24.0},"NR":{"usable":0.7704165300098393,"rate":24.97}}},"decision":{"policy":"OnlyWifi","decisionInterval":"0.5s","handoverExecDelay":"0s","pingPongWindow":"2s","startTime":"0.5s","timeToTrigger":"1s","sinrSwitchMargin":"3dB","loadSwitchMargin":"0.15","latencyBudget":"0.1s","ensembleWeightCoverage":"1","ensembleWeightSinr":"1","ensembleWeightLatency":"1","ensembleWeightLoad":"1","ensembleStickiness":"1"}},{"id":"20261117T110914Z-highway-only_wifi-s1","meta":{"run_id":"20261117T110914Z-highway-only_wifi-s1","scenario":"highway","policy":"only_wifi","config":"MultiRatHighway_Base","command":"dash/run-experiment.sh --scenario highway --policy only_wifi --time 120s --seed 1 --name s1 --set '**.vector-recording=false'","sim_time":"120s","seed":"1","name":"s1","params":["**.vector-recording=false"],"overrides":["--*.car[*].multiRatAppManager.policy=\"OnlyWifi\"","--**.vector-recording=false","--seed-set=1"],"image":"multiratvanet:latest","image_id":"sha256:9feec50026fe7ec726be84a029d216ad706b4bea4b021eb02461a66bd9b87b3d","repo_commit":"d55ae08c331dbfa29bf7ee515487d4360127e2b6","who":"vnet","host":"anjuna3","started":"2026-11-17T11:09:14Z","finished":"2026-11-17T11:13:30Z","exit_code":0},"status":"ok","summary":{"vehicles":17,"classes":[{"name":"safety","direction":"car to server","sent":15268.0,"received":11626.0,"pdr":0.7614618810584228,"within_deadline":0.7583835472884464,"deadline_ms":100.0,"throughput_mbps":0.1550133333333333,"delay_mean_ms":5.441040285094702,"delay_max_ms":2192.371589967},{"name":"infotainment","direction":"server to car","sent":64040.0,"received":50861.0,"pdr":0.7942067457838851,"within_deadline":0.7931136789506559,"deadline_ms":1000.0,"throughput_mbps":4.238416666666667,"delay_mean_ms":53.72829327945371,"delay_max_ms":2150.2977935179997}],"sent":79308.0,"received":62487.0,"pdr":0.7879028597367227,"throughput_mbps":4.39343,"delay_mean_ms":44.74422293982438,"delay_max_ms":2192.371589967,"handovers":0.0,"handovers_per_vehicle":0.0,"handovers_failed":0.0,"ping_pong":0.0,"connectivity":0.9535890169152642,"outage_s":78.00000000000001,"interruption_count":0,"interruption_mean_ms":null,"interruption_max_ms":null,"interruption_lost":0.0,"shares":{"DSRC":0.0,"WiFi":1.0,"NR":0.0},"inputs":{"DSRC":{"SinrMargin":24.904332322751173,"Load":0.030601492887209057,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":0.6515895001442541},"WiFi":{"SinrMargin":24.196639073376357,"Load":0.3196890143737847,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":3.866176957013247},"NR":{"SinrMargin":18.93897346726909,"Load":null,"Capacity":null,"LinkRate":16.140672585422337,"Latency":null,"ProbeRtt":65.23444770574511}}},"config":"MultiRatHighway_Base","started":"2026-11-17T11:09:14Z","sim_time":120.0,"cellular_merged":false,"decisions":{"count":3046,"branches":{"start":17,"best":2276,"lost":661,"none":92},"rat_stats":{"DSRC":{"usable":0.7764281024294156,"rate":24.0},"WiFi":{"usable":0.752790544977019,"rate":24.0},"NR":{"usable":0.7806959947472094,"rate":24.97}}},"decision":{"policy":"OnlyWifi","decisionInterval":"0.5s","handoverExecDelay":"0s","pingPongWindow":"2s","startTime":"0.5s","timeToTrigger":"1s","sinrSwitchMargin":"3dB","loadSwitchMargin":"0.15","latencyBudget":"0.1s","ensembleWeightCoverage":"1","ensembleWeightSinr":"1","ensembleWeightLatency":"1","ensembleWeightLoad":"1","ensembleStickiness":"1"}},{"id":"20261117T110913Z-highway-only_wifi-s0","meta":{"run_id":"20261117T110913Z-highway-only_wifi-s0","scenario":"highway","policy":"only_wifi","config":"MultiRatHighway_Base","command":"dash/run-experiment.sh --scenario highway --policy only_wifi --time 120s --seed 0 --name s0 --set '**.vector-recording=false'","sim_time":"120s","seed":"0","name":"s0","params":["**.vector-recording=false"],"overrides":["--*.car[*].multiRatAppManager.policy=\"OnlyWifi\"","--**.vector-recording=false","--seed-set=0"],"image":"multiratvanet:latest","image_id":"sha256:9feec50026fe7ec726be84a029d216ad706b4bea4b021eb02461a66bd9b87b3d","repo_commit":"d55ae08c331dbfa29bf7ee515487d4360127e2b6","who":"vnet","host":"anjuna3","started":"2026-11-17T11:09:13Z","finished":"2026-11-17T11:13:30Z","exit_code":0},"status":"ok","summary":{"vehicles":17,"classes":[{"name":"safety","direction":"car to server","sent":15268.0,"received":11625.0,"pdr":0.7613963845952318,"within_deadline":0.7591040083835473,"deadline_ms":100.0,"throughput_mbps":0.15499999999999997,"delay_mean_ms":6.5242507747913985,"delay_max_ms":5858.631955064},{"name":"infotainment","direction":"server to car","sent":68200.0,"received":51795.0,"pdr":0.759457478005865,"within_deadline":0.756407624633431,"deadline_ms":1000.0,"throughput_mbps":4.316249999999999,"delay_mean_ms":59.12979955535938,"delay_max_ms":4844.804892039}],"sent":83468.0,"received":63420.0,"pdr":0.7598121435759813,"throughput_mbps":4.4712499999999995,"delay_mean_ms":49.48710790329216,"delay_max_ms":5858.631955064,"handovers":0.0,"handovers_per_vehicle":0.0,"handovers_failed":0.0,"ping_pong":0.0,"connectivity":0.9231953169858489,"outage_s":129.2,"interruption_count":0,"interruption_mean_ms":null,"interruption_max_ms":null,"interruption_lost":0.0,"shares":{"DSRC":0.0,"WiFi":1.0,"NR":0.0},"inputs":{"DSRC":{"SinrMargin":24.77968409069341,"Load":0.0311953707261147,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":0.6553506157821894},"WiFi":{"SinrMargin":24.4637869007547,"Load":0.3183261589744941,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":1.9188833565187935},"NR":{"SinrMargin":18.645504375269255,"Load":null,"Capacity":null,"LinkRate":15.95515237199035,"Latency":null,"ProbeRtt":54.26542083146442}}},"config":"MultiRatHighway_Base","started":"2026-11-17T11:09:13Z","sim_time":120.0,"cellular_merged":false,"decisions":{"count":3050,"branches":{"none":86,"start":17,"best":2284,"lost":663},"rat_stats":{"DSRC":{"usable":0.7108196721311475,"rate":24.0},"WiFi":{"usable":0.7544262295081967,"rate":24.0},"NR":{"usable":0.800327868852459,"rate":24.97}}},"decision":{"policy":"OnlyWifi","decisionInterval":"0.5s","handoverExecDelay":"0s","pingPongWindow":"2s","startTime":"0.5s","timeToTrigger":"1s","sinrSwitchMargin":"3dB","loadSwitchMargin":"0.15","latencyBudget":"0.1s","ensembleWeightCoverage":"1","ensembleWeightSinr":"1","ensembleWeightLatency":"1","ensembleWeightLoad":"1","ensembleStickiness":"1"}},{"id":"20261117T110905Z-highway-only_dsrc-s2","meta":{"run_id":"20261117T110905Z-highway-only_dsrc-s2","scenario":"highway","policy":"only_dsrc","config":"MultiRatHighway_Base","command":"dash/run-experiment.sh --scenario highway --policy only_dsrc --time 120s --seed 2 --name s2 --set '**.vector-recording=false'","sim_time":"120s","seed":"2","name":"s2","params":["**.vector-recording=false"],"overrides":["--*.car[*].multiRatAppManager.policy=\"OnlyDsrc\"","--**.vector-recording=false","--seed-set=2"],"image":"multiratvanet:latest","image_id":"sha256:9feec50026fe7ec726be84a029d216ad706b4bea4b021eb02461a66bd9b87b3d","repo_commit":"d55ae08c331dbfa29bf7ee515487d4360127e2b6","who":"vnet","host":"anjuna3","started":"2026-11-17T11:09:05Z","finished":"2026-11-17T11:13:24Z","exit_code":0},"status":"ok","summary":{"vehicles":17,"classes":[{"name":"safety","direction":"car to server","sent":15268.0,"received":10895.0,"pdr":0.7135839664658108,"within_deadline":0.7133874770762378,"deadline_ms":100.0,"throughput_mbps":0.14526666666666666,"delay_mean_ms":1.1785961923237265,"delay_max_ms":1356.522108542},{"name":"infotainment","direction":"server to car","sent":66600.0,"received":48818.0,"pdr":0.733003003003003,"within_deadline":0.733003003003003,"deadline_ms":1000.0,"throughput_mbps":4.0681666666666665,"delay_mean_ms":48.41621122540864,"delay_max_ms":429.70381988900004}],"sent":81868.0,"received":59713.0,"pdr":0.729381443298969,"throughput_mbps":4.213433333333333,"delay_mean_ms":39.79742108280217,"delay_max_ms":1356.522108542,"handovers":0.0,"handovers_per_vehicle":0.0,"handovers_failed":0.0,"ping_pong":0.0,"connectivity":0.9241263458173664,"outage_s":126.60000000000002,"interruption_count":0,"interruption_mean_ms":null,"interruption_max_ms":null,"interruption_lost":0.0,"shares":{"DSRC":1.0,"WiFi":0.0,"NR":0.0},"inputs":{"DSRC":{"SinrMargin":24.898557872908068,"Load":0.31539922695120065,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":2.7694028169266156},"WiFi":{"SinrMargin":24.75815941938053,"Load":0.029625988860435645,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":0.6061133386756977},"NR":{"SinrMargin":18.912662885493955,"Load":null,"Capacity":null,"LinkRate":16.1578851153459,"Latency":null,"ProbeRtt":56.410623290318405}}},"config":"MultiRatHighway_Base","started":"2026-11-17T11:09:05Z","sim_time":120.0,"cellular_merged":false,"decisions":{"count":3050,"branches":{"start":17,"best":2166,"lost":857,"none":10},"rat_stats":{"DSRC":{"usable":0.7157377049180328,"rate":24.0},"WiFi":{"usable":0.7537704918032787,"rate":24.0},"NR":{"usable":0.7836065573770492,"rate":24.97}}},"decision":{"policy":"OnlyDsrc","decisionInterval":"0.5s","handoverExecDelay":"0s","pingPongWindow":"2s","startTime":"0.5s","timeToTrigger":"1s","sinrSwitchMargin":"3dB","loadSwitchMargin":"0.15","latencyBudget":"0.1s","ensembleWeightCoverage":"1","ensembleWeightSinr":"1","ensembleWeightLatency":"1","ensembleWeightLoad":"1","ensembleStickiness":"1"}},{"id":"20261117T110825Z-highway-only_dsrc-s1","meta":{"run_id":"20261117T110825Z-highway-only_dsrc-s1","scenario":"highway","policy":"only_dsrc","config":"MultiRatHighway_Base","command":"dash/run-experiment.sh --scenario highway --policy only_dsrc --time 120s --seed 1 --name s1 --set '**.vector-recording=false'","sim_time":"120s","seed":"1","name":"s1","params":["**.vector-recording=false"],"overrides":["--*.car[*].multiRatAppManager.policy=\"OnlyDsrc\"","--**.vector-recording=false","--seed-set=1"],"image":"multiratvanet:latest","image_id":"sha256:9feec50026fe7ec726be84a029d216ad706b4bea4b021eb02461a66bd9b87b3d","repo_commit":"d55ae08c331dbfa29bf7ee515487d4360127e2b6","who":"vnet","host":"anjuna3","started":"2026-11-17T11:08:25Z","finished":"2026-11-17T11:12:52Z","exit_code":0},"status":"ok","summary":{"vehicles":17,"classes":[{"name":"safety","direction":"car to server","sent":15268.0,"received":10898.0,"pdr":0.7137804558553839,"within_deadline":0.7137149593921929,"deadline_ms":100.0,"throughput_mbps":0.14530666666666664,"delay_mean_ms":1.1499009954247568,"delay_max_ms":329.23148051},{"name":"infotainment","direction":"server to car","sent":63010.0,"received":47349.0,"pdr":0.7514521504523092,"within_deadline":0.7514521504523092,"deadline_ms":1000.0,"throughput_mbps":3.9457499999999994,"delay_mean_ms":48.47101857454349,"delay_max_ms":491.65344512800004}],"sent":78278.0,"received":58247.0,"pdr":0.7441043460486982,"throughput_mbps":4.091056666666666,"delay_mean_ms":39.61724860566551,"delay_max_ms":491.65344512800004,"handovers":0.0,"handovers_per_vehicle":0.0,"handovers_failed":0.0,"ping_pong":0.0,"connectivity":0.9212608244720613,"outage_s":130.49999999999997,"interruption_count":0,"interruption_mean_ms":null,"interruption_max_ms":null,"interruption_lost":0.0,"shares":{"DSRC":1.0,"WiFi":0.0,"NR":0.0},"inputs":{"DSRC":{"SinrMargin":24.759212762220177,"Load":0.30625497766515763,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":2.8170872539669647},"WiFi":{"SinrMargin":24.7603886677353,"Load":0.029606100240315878,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":0.6470587462646089},"NR":{"SinrMargin":18.575406212305488,"Load":null,"Capacity":null,"LinkRate":16.05616308069201,"Latency":null,"ProbeRtt":57.048307064273466}}},"config":"MultiRatHighway_Base","started":"2026-11-17T11:08:25Z","sim_time":120.0,"cellular_merged":false,"decisions":{"count":3045,"branches":{"start":17,"best":2173,"lost":853,"none":2},"rat_stats":{"DSRC":{"usable":0.7192118226600985,"rate":24.0},"WiFi":{"usable":0.7589490968801313,"rate":24.0},"NR":{"usable":0.7842364532019704,"rate":24.97}}},"decision":{"policy":"OnlyDsrc","decisionInterval":"0.5s","handoverExecDelay":"0s","pingPongWindow":"2s","startTime":"0.5s","timeToTrigger":"1s","sinrSwitchMargin":"3dB","loadSwitchMargin":"0.15","latencyBudget":"0.1s","ensembleWeightCoverage":"1","ensembleWeightSinr":"1","ensembleWeightLatency":"1","ensembleWeightLoad":"1","ensembleStickiness":"1"}},{"id":"20261117T110504Z-highway-only_dsrc-s0","meta":{"run_id":"20261117T110504Z-highway-only_dsrc-s0","scenario":"highway","policy":"only_dsrc","config":"MultiRatHighway_Base","command":"dash/run-experiment.sh --scenario highway --policy only_dsrc --time 120s --seed 0 --name s0 --set '**.vector-recording=false'","sim_time":"120s","seed":"0","name":"s0","params":["**.vector-recording=false"],"overrides":["--*.car[*].multiRatAppManager.policy=\"OnlyDsrc\"","--**.vector-recording=false","--seed-set=0"],"image":"multiratvanet:latest","image_id":"sha256:9feec50026fe7ec726be84a029d216ad706b4bea4b021eb02461a66bd9b87b3d","repo_commit":"d55ae08c331dbfa29bf7ee515487d4360127e2b6","who":"vnet","host":"anjuna3","started":"2026-11-17T11:05:04Z","finished":"2026-11-17T11:09:54Z","exit_code":0},"status":"ok","summary":{"vehicles":17,"classes":[{"name":"safety","direction":"car to server","sent":15268.0,"received":12106.0,"pdr":0.7929001833900969,"within_deadline":0.792769190463715,"deadline_ms":100.0,"throughput_mbps":0.16141333333333333,"delay_mean_ms":1.0637823953477614,"delay_max_ms":121.510493793},{"name":"infotainment","direction":"server to car","sent":66110.0,"received":53248.0,"pdr":0.8054454696717592,"within_deadline":0.8052639540160339,"deadline_ms":1000.0,"throughput_mbps":4.437333333333333,"delay_mean_ms":52.136190443883116,"delay_max_ms":1541.1478127980001}],"sent":81378.0,"received":65354.0,"pdr":0.8030917446975842,"throughput_mbps":4.598746666666666,"delay_mean_ms":42.67567430354635,"delay_max_ms":1541.1478127980001,"handovers":0.0,"handovers_per_vehicle":0.0,"handovers_failed":0.0,"ping_pong":0.0,"connectivity":0.9424352583420846,"outage_s":95.8,"interruption_count":0,"interruption_mean_ms":null,"interruption_max_ms":null,"interruption_lost":0.0,"shares":{"DSRC":1.0,"WiFi":0.0,"NR":0.0},"inputs":{"DSRC":{"SinrMargin":24.890583902197474,"Load":0.34343841883417586,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":4.847651916015323},"WiFi":{"SinrMargin":24.759123021754178,"Load":0.029598739466469418,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":0.5926973421301129},"NR":{"SinrMargin":19.19285167853847,"Load":null,"Capacity":null,"LinkRate":16.273345700942762,"Latency":null,"ProbeRtt":53.80324324511705}}},"config":"MultiRatHighway_Base","started":"2026-11-17T11:05:04Z","sim_time":120.0,"cellular_merged":false,"decisions":{"count":3049,"branches":{"start":17,"best":2413,"lost":611,"none":8},"rat_stats":{"DSRC":{"usable":0.7969826172515578,"rate":24.0},"WiFi":{"usable":0.7563135454247294,"rate":24.0},"NR":{"usable":0.8032141685798623,"rate":24.97}}},"decision":{"policy":"OnlyDsrc","decisionInterval":"0.5s","handoverExecDelay":"0s","pingPongWindow":"2s","startTime":"0.5s","timeToTrigger":"1s","sinrSwitchMargin":"3dB","loadSwitchMargin":"0.15","latencyBudget":"0.1s","ensembleWeightCoverage":"1","ensembleWeightSinr":"1","ensembleWeightLatency":"1","ensembleWeightLoad":"1","ensembleStickiness":"1"}},{"id":"20261117T110444Z-highway-ensemble-s2","meta":{"run_id":"20261117T110444Z-highway-ensemble-s2","scenario":"highway","policy":"ensemble","config":"Ensemble","command":"dash/run-experiment.sh --scenario highway --policy ensemble --time 120s --seed 2 --name s2 --set '**.vector-recording=false'","sim_time":"120s","seed":"2","name":"s2","params":["**.vector-recording=false"],"overrides":["--**.vector-recording=false","--seed-set=2"],"image":"multiratvanet:latest","image_id":"sha256:9feec50026fe7ec726be84a029d216ad706b4bea4b021eb02461a66bd9b87b3d","repo_commit":"d55ae08c331dbfa29bf7ee515487d4360127e2b6","who":"vnet","host":"anjuna3","started":"2026-11-17T11:04:44Z","finished":"2026-11-17T11:09:13Z","exit_code":0},"status":"ok","summary":{"vehicles":17,"classes":[{"name":"safety","direction":"car to server","sent":15268.0,"received":13988.0,"pdr":0.9161645271155358,"within_deadline":0.90385119203563,"deadline_ms":100.0,"throughput_mbps":0.18650666666666668,"delay_mean_ms":11.830563266414783,"delay_max_ms":1501.075348859},{"name":"infotainment","direction":"server to car","sent":63410.0,"received":56055.0,"pdr":0.8840088314146034,"within_deadline":0.88282605267308,"deadline_ms":1000.0,"throughput_mbps":4.67125,"delay_mean_ms":62.31834182631542,"delay_max_ms":5261.653690475}],"sent":78678.0,"received":70043.0,"pdr":0.8902488624520196,"throughput_mbps":4.857756666666666,"delay_mean_ms":52.23563482496068,"delay_max_ms":5261.653690475,"handovers":37.0,"handovers_per_vehicle":2.176470588235294,"handovers_failed":0.0,"ping_pong":0.0,"connectivity":0.9229759431017794,"outage_s":130.39999999999998,"interruption_count":72.0,"interruption_mean_ms":113.57593801648612,"interruption_max_ms":5847.06959799,"interruption_lost":14.0,"shares":{"DSRC":0.6140945179888158,"WiFi":0.045325807385984185,"NR":0.3405796746251998},"inputs":{"DSRC":{"SinrMargin":24.947833557835185,"Load":0.2342732255624506,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":1.527210532703332},"WiFi":{"SinrMargin":24.72793678251794,"Load":0.04476269628149665,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":1.260020330024749},"NR":{"SinrMargin":19.45037262037783,"Load":null,"Capacity":null,"LinkRate":16.341712256781353,"Latency":null,"ProbeRtt":55.1484205261493}}},"config":"Ensemble","started":"2026-11-17T11:04:44Z","sim_time":120.0,"cellular_merged":false,"decisions":{"count":3048,"branches":{"start":17,"best":1522,"sticky":1193,"wait":28,"switch":11,"lost":26,"none":251},"rat_stats":{"DSRC":{"usable":0.7171916010498688,"rate":24.0},"WiFi":{"usable":0.7536089238845144,"rate":24.0},"NR":{"usable":0.7887139107611548,"rate":24.97}}},"decision":{"policy":"Ensemble","decisionInterval":"0.5s","handoverExecDelay":"0s","pingPongWindow":"2s","startTime":"0.5s","timeToTrigger":"1s","sinrSwitchMargin":"3dB","loadSwitchMargin":"0.15","latencyBudget":"0.1s","ensembleWeightCoverage":"1","ensembleWeightSinr":"2","ensembleWeightLatency":"1.5","ensembleWeightLoad":"1","ensembleStickiness":"1"}},{"id":"20261117T110434Z-highway-ensemble-s1","meta":{"run_id":"20261117T110434Z-highway-ensemble-s1","scenario":"highway","policy":"ensemble","config":"Ensemble","command":"dash/run-experiment.sh --scenario highway --policy ensemble --time 120s --seed 1 --name s1 --set '**.vector-recording=false'","sim_time":"120s","seed":"1","name":"s1","params":["**.vector-recording=false"],"overrides":["--**.vector-recording=false","--seed-set=1"],"image":"multiratvanet:latest","image_id":"sha256:9feec50026fe7ec726be84a029d216ad706b4bea4b021eb02461a66bd9b87b3d","repo_commit":"d55ae08c331dbfa29bf7ee515487d4360127e2b6","who":"vnet","host":"anjuna3","started":"2026-11-17T11:04:34Z","finished":"2026-11-17T11:09:23Z","exit_code":0},"status":"ok","summary":{"vehicles":17,"classes":[{"name":"safety","direction":"car to server","sent":15268.0,"received":14113.0,"pdr":0.9243515850144092,"within_deadline":0.9116452711553577,"deadline_ms":100.0,"throughput_mbps":0.18817333333333333,"delay_mean_ms":12.714166450028342,"delay_max_ms":5047.979796219},{"name":"infotainment","direction":"server to car","sent":64400.0,"received":58404.0,"pdr":0.9068944099378882,"within_deadline":0.9054347826086957,"deadline_ms":1000.0,"throughput_mbps":4.867,"delay_mean_ms":63.83273380137525,"delay_max_ms":5179.572377873}],"sent":79668.0,"received":72517.0,"pdr":0.9102399959833308,"throughput_mbps":5.055173333333333,"delay_mean_ms":53.88422047305832,"delay_max_ms":5179.572377873,"handovers":39.0,"handovers_per_vehicle":2.2941176470588234,"handovers_failed":0.0,"ping_pong":0.0,"connectivity":0.9158544452889265,"outage_s":142.0,"interruption_count":75.0,"interruption_mean_ms":37.81980470464,"interruption_max_ms":831.5332150930001,"interruption_lost":14.0,"shares":{"DSRC":0.6099134807858677,"WiFi":0.0569159392023197,"NR":0.33317058001181316},"inputs":{"DSRC":{"SinrMargin":24.92803585972277,"Load":0.24174319206356235,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":1.6310477437385151},"WiFi":{"SinrMargin":24.785493350537354,"Load":0.05249312527718071,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":1.1726613182323484},"NR":{"SinrMargin":18.75799114121979,"Load":null,"Capacity":null,"LinkRate":16.123541589910445,"Latency":null,"ProbeRtt":57.0479382170503}}},"config":"Ensemble","started":"2026-11-17T11:04:34Z","sim_time":120.0,"cellular_merged":false,"decisions":{"count":3048,"branches":{"start":17,"best":1503,"sticky":1182,"wait":32,"switch":12,"lost":27,"none":275},"rat_stats":{"DSRC":{"usable":0.7181758530183727,"rate":24.0},"WiFi":{"usable":0.7542650918635171,"rate":24.0},"NR":{"usable":0.7759186351706037,"rate":24.97}}},"decision":{"policy":"Ensemble","decisionInterval":"0.5s","handoverExecDelay":"0s","pingPongWindow":"2s","startTime":"0.5s","timeToTrigger":"1s","sinrSwitchMargin":"3dB","loadSwitchMargin":"0.15","latencyBudget":"0.1s","ensembleWeightCoverage":"1","ensembleWeightSinr":"2","ensembleWeightLatency":"1.5","ensembleWeightLoad":"1","ensembleStickiness":"1"}},{"id":"20261117T110433Z-highway-ensemble-s0","meta":{"run_id":"20261117T110433Z-highway-ensemble-s0","scenario":"highway","policy":"ensemble","config":"Ensemble","command":"dash/run-experiment.sh --scenario highway --policy ensemble --time 120s --seed 0 --name s0 --set '**.vector-recording=false'","sim_time":"120s","seed":"0","name":"s0","params":["**.vector-recording=false"],"overrides":["--**.vector-recording=false","--seed-set=0"],"image":"multiratvanet:latest","image_id":"sha256:9feec50026fe7ec726be84a029d216ad706b4bea4b021eb02461a66bd9b87b3d","repo_commit":"d55ae08c331dbfa29bf7ee515487d4360127e2b6","who":"vnet","host":"anjuna3","started":"2026-11-17T11:04:33Z","finished":"2026-11-17T11:09:16Z","exit_code":0},"status":"ok","summary":{"vehicles":17,"classes":[{"name":"safety","direction":"car to server","sent":15268.0,"received":14125.0,"pdr":0.9251375425727011,"within_deadline":0.9141996332198061,"deadline_ms":100.0,"throughput_mbps":0.18833333333333332,"delay_mean_ms":12.053208442453805,"delay_max_ms":4098.143797982},{"name":"infotainment","direction":"server to car","sent":63830.0,"received":58253.0,"pdr":0.9126272912423625,"within_deadline":0.9112642957856807,"deadline_ms":1000.0,"throughput_mbps":4.854416666666666,"delay_mean_ms":63.23731848896006,"delay_max_ms":4473.052467022}],"sent":79098.0,"received":72378.0,"pdr":0.9150420996738223,"throughput_mbps":5.04275,"delay_mean_ms":53.248432993272125,"delay_max_ms":4473.052467022,"handovers":37.0,"handovers_per_vehicle":2.176470588235294,"handovers_failed":0.0,"ping_pong":0.0,"connectivity":0.9208590949852223,"outage_s":133.3,"interruption_count":72.0,"interruption_mean_ms":15.605128773513888,"interruption_max_ms":345.676110969,"interruption_lost":4.0,"shares":{"DSRC":0.5423427177263146,"WiFi":0.1184493826979667,"NR":0.3392078995757172},"inputs":{"DSRC":{"SinrMargin":24.72259774392424,"Load":0.2133217069617753,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":1.000773924741002},"WiFi":{"SinrMargin":24.75110905608982,"Load":0.07867349475882288,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":0.9633075430631536},"NR":{"SinrMargin":18.993999961766292,"Load":null,"Capacity":null,"LinkRate":16.08901450483882,"Latency":null,"ProbeRtt":57.47663140027288}}},"config":"Ensemble","started":"2026-11-17T11:04:33Z","sim_time":120.0,"cellular_merged":false,"decisions":{"count":3048,"branches":{"start":17,"best":1694,"sticky":1007,"wait":31,"switch":11,"lost":26,"none":262},"rat_stats":{"DSRC":{"usable":0.7145669291338582,"rate":24.0},"WiFi":{"usable":0.756233595800525,"rate":24.0},"NR":{"usable":0.776246719160105,"rate":24.97}}},"decision":{"policy":"Ensemble","decisionInterval":"0.5s","handoverExecDelay":"0s","pingPongWindow":"2s","startTime":"0.5s","timeToTrigger":"1s","sinrSwitchMargin":"3dB","loadSwitchMargin":"0.15","latencyBudget":"0.1s","ensembleWeightCoverage":"1","ensembleWeightSinr":"2","ensembleWeightLatency":"1.5","ensembleWeightLoad":"1","ensembleStickiness":"1"}},{"id":"20261117T110431Z-highway-load-s2","meta":{"run_id":"20261117T110431Z-highway-load-s2","scenario":"highway","policy":"load","config":"Load","command":"dash/run-experiment.sh --scenario highway --policy load --time 120s --seed 2 --name s2 --set '**.vector-recording=false'","sim_time":"120s","seed":"2","name":"s2","params":["**.vector-recording=false"],"overrides":["--**.vector-recording=false","--seed-set=2"],"image":"multiratvanet:latest","image_id":"sha256:9feec50026fe7ec726be84a029d216ad706b4bea4b021eb02461a66bd9b87b3d","repo_commit":"d55ae08c331dbfa29bf7ee515487d4360127e2b6","who":"vnet","host":"anjuna3","started":"2026-11-17T11:04:31Z","finished":"2026-11-17T11:09:05Z","exit_code":0},"status":"ok","summary":{"vehicles":17,"classes":[{"name":"safety","direction":"car to server","sent":15268.0,"received":14291.0,"pdr":0.9360099554624051,"within_deadline":0.9187843856431752,"deadline_ms":100.0,"throughput_mbps":0.19054666666666667,"delay_mean_ms":11.616928786462811,"delay_max_ms":2414.4537019159998},{"name":"infotainment","direction":"server to car","sent":56440.0,"received":52510.0,"pdr":0.9303685329553508,"within_deadline":0.9293586109142452,"deadline_ms":1000.0,"throughput_mbps":4.3758333333333335,"delay_mean_ms":58.64968228003389,"delay_max_ms":2541.653284504}],"sent":71708.0,"received":66801.0,"pdr":0.9315696993361968,"throughput_mbps":4.5663800000000005,"delay_mean_ms":48.58778080884897,"delay_max_ms":2541.653284504,"handovers":27.0,"handovers_per_vehicle":1.588235294117647,"handovers_failed":0.0,"ping_pong":0.0,"connectivity":0.9223344405056629,"outage_s":129.7,"interruption_count":53.0,"interruption_mean_ms":14.956000941584907,"interruption_max_ms":330.85049486500003,"interruption_lost":2.0,"shares":{"DSRC":0.42246229700226,"WiFi":0.3764446551296191,"NR":0.20109304786812168},"inputs":{"DSRC":{"SinrMargin":24.30046892954853,"Load":0.15182463413313,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":0.8572688980702505},"WiFi":{"SinrMargin":24.73401645978988,"Load":0.1560536795329247,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":1.8966579259207739},"NR":{"SinrMargin":18.59331027247014,"Load":null,"Capacity":null,"LinkRate":15.865152425892518,"Latency":null,"ProbeRtt":64.81190943496523}}},"config":"Load","started":"2026-11-17T11:04:31Z","sim_time":120.0,"cellular_merged":false,"decisions":{"count":3048,"branches":{"start":17,"best":1589,"margin":1083,"lost":22,"none":256,"wait":76,"switch":5},"rat_stats":{"DSRC":{"usable":0.71751968503937,"rate":24.0},"WiFi":{"usable":0.7575459317585301,"rate":24.0},"NR":{"usable":0.7965879265091863,"rate":24.97}}},"decision":{"policy":"Load","decisionInterval":"0.5s","handoverExecDelay":"0s","pingPongWindow":"2s","startTime":"0.5s","timeToTrigger":"1s","sinrSwitchMargin":"3dB","loadSwitchMargin":"0.15","latencyBudget":"0.1s","ensembleWeightCoverage":"1","ensembleWeightSinr":"1","ensembleWeightLatency":"1","ensembleWeightLoad":"1","ensembleStickiness":"1"}},{"id":"20261117T110428Z-highway-load-s1","meta":{"run_id":"20261117T110428Z-highway-load-s1","scenario":"highway","policy":"load","config":"Load","command":"dash/run-experiment.sh --scenario highway --policy load --time 120s --seed 1 --name s1 --set '**.vector-recording=false'","sim_time":"120s","seed":"1","name":"s1","params":["**.vector-recording=false"],"overrides":["--**.vector-recording=false","--seed-set=1"],"image":"multiratvanet:latest","image_id":"sha256:9feec50026fe7ec726be84a029d216ad706b4bea4b021eb02461a66bd9b87b3d","repo_commit":"d55ae08c331dbfa29bf7ee515487d4360127e2b6","who":"vnet","host":"anjuna3","started":"2026-11-17T11:04:28Z","finished":"2026-11-17T11:09:18Z","exit_code":0},"status":"ok","summary":{"vehicles":17,"classes":[{"name":"safety","direction":"car to server","sent":15268.0,"received":14122.0,"pdr":0.9249410531831281,"within_deadline":0.9138721509038512,"deadline_ms":100.0,"throughput_mbps":0.1882933333333333,"delay_mean_ms":8.427629944325167,"delay_max_ms":1470.613296883},{"name":"infotainment","direction":"server to car","sent":65210.0,"received":60207.0,"pdr":0.9232786382456678,"within_deadline":0.9227725808925011,"deadline_ms":1000.0,"throughput_mbps":5.01725,"delay_mean_ms":58.66018205348446,"delay_max_ms":2192.549115412}],"sent":80478.0,"received":74329.0,"pdr":0.9235940256964636,"throughput_mbps":5.205543333333333,"delay_mean_ms":49.11634181770102,"delay_max_ms":2192.549115412,"handovers":81.0,"handovers_per_vehicle":4.764705882352941,"handovers_failed":0.0,"ping_pong":24.0,"connectivity":0.9242065622902329,"outage_s":125.79999999999998,"interruption_count":151.0,"interruption_mean_ms":71.7679194764106,"interruption_max_ms":9011.800962809999,"interruption_lost":6.0,"shares":{"DSRC":0.3591908359144354,"WiFi":0.4405173238912228,"NR":0.20029184019434282},"inputs":{"DSRC":{"SinrMargin":24.984419544827418,"Load":0.17284574529156232,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":1.4120514674621156},"WiFi":{"SinrMargin":24.555176782896233,"Load":0.17498978265032233,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":1.8773281087146838},"NR":{"SinrMargin":18.743727689291617,"Load":null,"Capacity":null,"LinkRate":15.874179653918626,"Latency":null,"ProbeRtt":60.27797901837194}}},"config":"Load","started":"2026-11-17T11:04:28Z","sim_time":120.0,"cellular_merged":false,"decisions":{"count":3049,"branches":{"start":17,"best":1426,"margin":1035,"lost":27,"none":242,"wait":248,"switch":54},"rat_stats":{"DSRC":{"usable":0.7166284027550016,"rate":24.0},"WiFi":{"usable":0.7566415218104297,"rate":24.0},"NR":{"usable":0.7966546408658577,"rate":24.97}}},"decision":{"policy":"Load","decisionInterval":"0.5s","handoverExecDelay":"0s","pingPongWindow":"2s","startTime":"0.5s","timeToTrigger":"1s","sinrSwitchMargin":"3dB","loadSwitchMargin":"0.15","latencyBudget":"0.1s","ensembleWeightCoverage":"1","ensembleWeightSinr":"1","ensembleWeightLatency":"1","ensembleWeightLoad":"1","ensembleStickiness":"1"}},{"id":"20261117T110423Z-highway-load-s0","meta":{"run_id":"20261117T110423Z-highway-load-s0","scenario":"highway","policy":"load","config":"Load","command":"dash/run-experiment.sh --scenario highway --policy load --time 120s --seed 0 --name s0 --set '**.vector-recording=false'","sim_time":"120s","seed":"0","name":"s0","params":["**.vector-recording=false"],"overrides":["--**.vector-recording=false","--seed-set=0"],"image":"multiratvanet:latest","image_id":"sha256:9feec50026fe7ec726be84a029d216ad706b4bea4b021eb02461a66bd9b87b3d","repo_commit":"d55ae08c331dbfa29bf7ee515487d4360127e2b6","who":"vnet","host":"anjuna3","started":"2026-11-17T11:04:23Z","finished":"2026-11-17T11:09:14Z","exit_code":0},"status":"ok","summary":{"vehicles":17,"classes":[{"name":"safety","direction":"car to server","sent":15268.0,"received":14833.0,"pdr":0.9715090385119204,"within_deadline":0.9699371233953367,"deadline_ms":100.0,"throughput_mbps":0.1977733333333333,"delay_mean_ms":2.362763556663858,"delay_max_ms":555.847734381},{"name":"infotainment","direction":"server to car","sent":66300.0,"received":63939.0,"pdr":0.9643891402714933,"within_deadline":0.9643740573152337,"deadline_ms":1000.0,"throughput_mbps":5.32825,"delay_mean_ms":48.823882755524785,"delay_max_ms":1003.934529175}],"sent":81568.0,"received":78772.0,"pdr":0.9657218517065516,"throughput_mbps":5.526023333333333,"delay_mean_ms":40.075116936747754,"delay_max_ms":1003.934529175,"handovers":38.0,"handovers_per_vehicle":2.235294117647059,"handovers_failed":0.0,"ping_pong":1.0,"connectivity":0.9799808080962348,"outage_s":30.600000000000005,"interruption_count":72.0,"interruption_mean_ms":12.597937949333332,"interruption_max_ms":601.847734381,"interruption_lost":3.0,"shares":{"DSRC":0.5191244336617806,"WiFi":0.3914689698289133,"NR":0.089406596509306},"inputs":{"DSRC":{"SinrMargin":24.86038744787765,"Load":0.19602876988249235,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":1.2385935487565778},"WiFi":{"SinrMargin":24.5833915768733,"Load":0.19060849986305062,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":1.5829529057292353},"NR":{"SinrMargin":19.269449786729417,"Load":null,"Capacity":null,"LinkRate":16.24301063177377,"Latency":null,"ProbeRtt":57.95469642321}}},"config":"Load","started":"2026-11-17T11:04:23Z","sim_time":120.0,"cellular_merged":false,"decisions":{"count":3048,"branches":{"start":17,"margin":1031,"best":1774,"wait":141,"lost":23,"none":47,"switch":15},"rat_stats":{"DSRC":{"usable":0.8494094488188977,"rate":24.0},"WiFi":{"usable":0.7572178477690289,"rate":24.0},"NR":{"usable":0.7874015748031497,"rate":24.97}}},"decision":{"policy":"Load","decisionInterval":"0.5s","handoverExecDelay":"0s","pingPongWindow":"2s","startTime":"0.5s","timeToTrigger":"1s","sinrSwitchMargin":"3dB","loadSwitchMargin":"0.15","latencyBudget":"0.1s","ensembleWeightCoverage":"1","ensembleWeightSinr":"1","ensembleWeightLatency":"1","ensembleWeightLoad":"1","ensembleStickiness":"1"}},{"id":"20261117T110417Z-highway-latency_qos-s2","meta":{"run_id":"20261117T110417Z-highway-latency_qos-s2","scenario":"highway","policy":"latency_qos","config":"LatencyQos","command":"dash/run-experiment.sh --scenario highway --policy latency_qos --time 120s --seed 2 --name s2 --set '**.vector-recording=false'","sim_time":"120s","seed":"2","name":"s2","params":["**.vector-recording=false"],"overrides":["--**.vector-recording=false","--seed-set=2"],"image":"multiratvanet:latest","image_id":"sha256:9feec50026fe7ec726be84a029d216ad706b4bea4b021eb02461a66bd9b87b3d","repo_commit":"d55ae08c331dbfa29bf7ee515487d4360127e2b6","who":"vnet","host":"anjuna3","started":"2026-11-17T11:04:17Z","finished":"2026-11-17T11:08:25Z","exit_code":0},"status":"ok","summary":{"vehicles":17,"classes":[{"name":"safety","direction":"car to server","sent":15268.0,"received":14052.0,"pdr":0.9203563007597589,"within_deadline":0.9077154833638984,"deadline_ms":100.0,"throughput_mbps":0.18736,"delay_mean_ms":14.329160037609594,"delay_max_ms":1320.075252059},{"name":"infotainment","direction":"server to car","sent":63250.0,"received":56949.0,"pdr":0.9003794466403162,"within_deadline":0.899399209486166,"deadline_ms":1000.0,"throughput_mbps":4.74575,"delay_mean_ms":66.12682507764491,"delay_max_ms":2203.678318501}],"sent":78518.0,"received":71001.0,"pdr":0.9042639904225782,"throughput_mbps":4.93311,"delay_mean_ms":55.875409053327274,"delay_max_ms":2203.678318501,"handovers":39.0,"handovers_per_vehicle":2.2941176470588234,"handovers_failed":0.0,"ping_pong":1.0,"connectivity":0.922582855754954,"outage_s":129.99999999999997,"interruption_count":68.0,"interruption_mean_ms":17.156985596470587,"interruption_max_ms":329.571278522,"interruption_lost":4.0,"shares":{"DSRC":0.44478946387376705,"WiFi":0.04661503579340371,"NR":0.5085955003328295},"inputs":{"DSRC":{"SinrMargin":24.782731122216063,"Load":0.17870925474308705,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":1.1618765001295972},"WiFi":{"SinrMargin":24.68482938621159,"Load":0.03891023999728571,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":1.0698153688217336},"NR":{"SinrMargin":19.077933703283193,"Load":null,"Capacity":null,"LinkRate":16.24515844924828,"Latency":null,"ProbeRtt":74.35409297700976}}},"config":"LatencyQos","started":"2026-11-17T11:04:17Z","sim_time":120.0,"cellular_merged":false,"decisions":{"count":3049,"branches":{"start":17,"best":2420,"margin":233,"wait":87,"switch":11,"lost":28,"none":253},"rat_stats":{"DSRC":{"usable":0.7169563791407019,"rate":24.0},"WiFi":{"usable":0.7536897343391276,"rate":24.0},"NR":{"usable":0.7894391603804526,"rate":24.97}}},"decision":{"policy":"LatencyQos","decisionInterval":"0.5s","handoverExecDelay":"0s","pingPongWindow":"2s","startTime":"0.5s","timeToTrigger":"1s","sinrSwitchMargin":"3dB","loadSwitchMargin":"0.15","latencyBudget":"0.1s","ensembleWeightCoverage":"1","ensembleWeightSinr":"1","ensembleWeightLatency":"1","ensembleWeightLoad":"1","ensembleStickiness":"1"}},{"id":"20261117T105944Z-highway-coverage_priority-s0","meta":{"run_id":"20261117T105944Z-highway-coverage_priority-s0","scenario":"highway","policy":"coverage_priority","config":"CoveragePriority","command":"dash/run-experiment.sh --scenario highway --policy coverage_priority --time 120s --seed 0 --name s0 --set '**.vector-recording=false'","sim_time":"120s","seed":"0","name":"s0","params":["**.vector-recording=false"],"overrides":["--**.vector-recording=false","--seed-set=0"],"image":"multiratvanet:latest","image_id":"sha256:9feec50026fe7ec726be84a029d216ad706b4bea4b021eb02461a66bd9b87b3d","repo_commit":"d55ae08c331dbfa29bf7ee515487d4360127e2b6","who":"vnet","host":"anjuna3","started":"2026-11-17T10:59:44Z","finished":"2026-11-17T11:04:34Z","exit_code":0},"status":"ok","summary":{"vehicles":17,"classes":[{"name":"safety","direction":"car to server","sent":15268.0,"received":14240.0,"pdr":0.9326696358396647,"within_deadline":0.9169504846738276,"deadline_ms":100.0,"throughput_mbps":0.18986666666666666,"delay_mean_ms":11.310501094028792,"delay_max_ms":1416.847734381},{"name":"infotainment","direction":"server to car","sent":65150.0,"received":60463.0,"pdr":0.9280583269378357,"within_deadline":0.9272141212586339,"deadline_ms":1000.0,"throughput_mbps":5.038583333333333,"delay_mean_ms":58.29679442189173,"delay_max_ms":2832.0403478820003}],"sent":80418.0,"received":74703.0,"pdr":0.9289338207863911,"throughput_mbps":5.2284500000000005,"delay_mean_ms":49.34019539656787,"delay_max_ms":2832.0403478820003,"handovers":39.0,"handovers_per_vehicle":2.2941176470588234,"handovers_failed":0.0,"ping_pong":4.0,"connectivity":0.9232180321879602,"outage_s":128.2,"interruption_count":71.0,"interruption_mean_ms":51.062481786985906,"interruption_max_ms":2664.843368135,"interruption_lost":4.0,"shares":{"DSRC":0.7332743327674499,"WiFi":0.06844057464785169,"NR":0.19828509258469923},"inputs":{"DSRC":{"SinrMargin":24.937094934275414,"Load":0.3099052813219047,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":2.0367866487476616},"WiFi":{"SinrMargin":24.640571599800644,"Load":0.050423252879222585,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":1.679397370758992},"NR":{"SinrMargin":18.781658650282413,"Load":null,"Capacity":null,"LinkRate":16.03919161959671,"Latency":null,"ProbeRtt":60.568655242690525}}},"config":"CoveragePriority","started":"2026-11-17T10:59:44Z","sim_time":120.0,"cellular_merged":false,"decisions":{"count":3045,"branches":{"start":17,"best":2736,"lost":32,"none":239,"wait":14,"switch":7},"rat_stats":{"DSRC":{"usable":0.7182266009852217,"rate":24.0},"WiFi":{"usable":0.7579638752052545,"rate":24.0},"NR":{"usable":0.7977011494252874,"rate":24.97}}},"decision":{"policy":"CoveragePriority","decisionInterval":"0.5s","handoverExecDelay":"0s","pingPongWindow":"2s","startTime":"0.5s","timeToTrigger":"1s","sinrSwitchMargin":"3dB","loadSwitchMargin":"0.15","latencyBudget":"0.1s","ensembleWeightCoverage":"1","ensembleWeightSinr":"1","ensembleWeightLatency":"1","ensembleWeightLoad":"1","ensembleStickiness":"1"}},{"id":"20261117T105944Z-highway-coverage_priority-s1","meta":{"run_id":"20261117T105944Z-highway-coverage_priority-s1","scenario":"highway","policy":"coverage_priority","config":"CoveragePriority","command":"dash/run-experiment.sh --scenario highway --policy coverage_priority --time 120s --seed 1 --name s1 --set '**.vector-recording=false'","sim_time":"120s","seed":"1","name":"s1","params":["**.vector-recording=false"],"overrides":["--**.vector-recording=false","--seed-set=1"],"image":"multiratvanet:latest","image_id":"sha256:9feec50026fe7ec726be84a029d216ad706b4bea4b021eb02461a66bd9b87b3d","repo_commit":"d55ae08c331dbfa29bf7ee515487d4360127e2b6","who":"vnet","host":"anjuna3","started":"2026-11-17T10:59:44Z","finished":"2026-11-17T11:04:23Z","exit_code":0},"status":"ok","summary":{"vehicles":17,"classes":[{"name":"safety","direction":"car to server","sent":15268.0,"received":14256.0,"pdr":0.9337175792507204,"within_deadline":0.9208147760020959,"deadline_ms":100.0,"throughput_mbps":0.19008,"delay_mean_ms":9.691578921984428,"delay_max_ms":1607.575319255},{"name":"infotainment","direction":"server to car","sent":63530.0,"received":58106.0,"pdr":0.9146230127498819,"within_deadline":0.9126082165905871,"deadline_ms":1000.0,"throughput_mbps":4.8421666666666665,"delay_mean_ms":63.14690767929405,"delay_max_ms":3913.4477789909997}],"sent":78798.0,"received":72362.0,"pdr":0.9183228000710678,"throughput_mbps":5.0322466666666665,"delay_mean_ms":52.615701151500375,"delay_max_ms":3913.4477789909997,"handovers":39.0,"handovers_per_vehicle":2.2941176470588234,"handovers_failed":0.0,"ping_pong":1.0,"connectivity":0.9430024263109348,"outage_s":96.79999999999997,"interruption_count":76.0,"interruption_mean_ms":16.567445065355262,"interruption_max_ms":585.995327756,"interruption_lost":5.0,"shares":{"DSRC":0.7370542391903669,"WiFi":0.08933566661387789,"NR":0.1736100941957546},"inputs":{"DSRC":{"SinrMargin":24.90827544989582,"Load":0.29238921033878706,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":4.212200798900582},"WiFi":{"SinrMargin":24.689163953637177,"Load":0.053715022544795765,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":0.8514495498411135},"NR":{"SinrMargin":18.735336902213753,"Load":null,"Capacity":null,"LinkRate":15.981934631485915,"Latency":null,"ProbeRtt":60.485170594608945}}},"config":"CoveragePriority","started":"2026-11-17T10:59:44Z","sim_time":120.0,"cellular_merged":false,"decisions":{"count":3046,"branches":{"start":17,"best":2801,"lost":34,"none":177,"wait":12,"switch":5},"rat_stats":{"DSRC":{"usable":0.7189757058437295,"rate":24.0},"WiFi":{"usable":0.7839789888378201,"rate":24.0},"NR":{"usable":0.7882468811556139,"rate":24.97}}},"decision":{"policy":"CoveragePriority","decisionInterval":"0.5s","handoverExecDelay":"0s","pingPongWindow":"2s","startTime":"0.5s","timeToTrigger":"1s","sinrSwitchMargin":"3dB","loadSwitchMargin":"0.15","latencyBudget":"0.1s","ensembleWeightCoverage":"1","ensembleWeightSinr":"1","ensembleWeightLatency":"1","ensembleWeightLoad":"1","ensembleStickiness":"1"}},{"id":"20261117T105944Z-highway-coverage_priority-s2","meta":{"run_id":"20261117T105944Z-highway-coverage_priority-s2","scenario":"highway","policy":"coverage_priority","config":"CoveragePriority","command":"dash/run-experiment.sh --scenario highway --policy coverage_priority --time 120s --seed 2 --name s2 --set '**.vector-recording=false'","sim_time":"120s","seed":"2","name":"s2","params":["**.vector-recording=false"],"overrides":["--**.vector-recording=false","--seed-set=2"],"image":"multiratvanet:latest","image_id":"sha256:9feec50026fe7ec726be84a029d216ad706b4bea4b021eb02461a66bd9b87b3d","repo_commit":"d55ae08c331dbfa29bf7ee515487d4360127e2b6","who":"vnet","host":"anjuna3","started":"2026-11-17T10:59:44Z","finished":"2026-11-17T11:05:04Z","exit_code":0},"status":"ok","summary":{"vehicles":17,"classes":[{"name":"safety","direction":"car to server","sent":15268.0,"received":14207.0,"pdr":0.9305082525543621,"within_deadline":0.9168194917474456,"deadline_ms":100.0,"throughput_mbps":0.18942666666666666,"delay_mean_ms":10.965701914718098,"delay_max_ms":2759.447826611},{"name":"infotainment","direction":"server to car","sent":67760.0,"received":61648.0,"pdr":0.9097992916174734,"within_deadline":0.9087072018890201,"deadline_ms":1000.0,"throughput_mbps":5.137333333333333,"delay_mean_ms":66.27348430062028,"delay_max_ms":2708.4793310689997}],"sent":83028.0,"received":75855.0,"pdr":0.9136074577251048,"throughput_mbps":5.32676,"delay_mean_ms":55.9148043934749,"delay_max_ms":2759.447826611,"handovers":50.0,"handovers_per_vehicle":2.9411764705882355,"handovers_failed":0.0,"ping_pong":6.0,"connectivity":0.919080492446417,"outage_s":136.10000000000002,"interruption_count":95.0,"interruption_mean_ms":8.207444997621053,"interruption_max_ms":217.067801197,"interruption_lost":2.0,"shares":{"DSRC":0.7254323822882607,"WiFi":0.07313112868216841,"NR":0.20143648902956962},"inputs":{"DSRC":{"SinrMargin":24.932940414536944,"Load":0.30222400357684703,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":9.364481961856617},"WiFi":{"SinrMargin":24.698297785994942,"Load":0.05845194718254788,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":0.8975428319555743},"NR":{"SinrMargin":19.062957240236393,"Load":null,"Capacity":null,"LinkRate":16.096380415367666,"Latency":null,"ProbeRtt":64.27910266506595}}},"config":"CoveragePriority","started":"2026-11-17T10:59:44Z","sim_time":120.0,"cellular_merged":false,"decisions":{"count":3048,"branches":{"start":17,"best":2699,"lost":37,"none":256,"wait":26,"switch":13},"rat_stats":{"DSRC":{"usable":0.7139107611548556,"rate":24.0},"WiFi":{"usable":0.7536089238845144,"rate":24.0},"NR":{"usable":0.786745406824147,"rate":24.97}}},"decision":{"policy":"CoveragePriority","decisionInterval":"0.5s","handoverExecDelay":"0s","pingPongWindow":"2s","startTime":"0.5s","timeToTrigger":"1s","sinrSwitchMargin":"3dB","loadSwitchMargin":"0.15","latencyBudget":"0.1s","ensembleWeightCoverage":"1","ensembleWeightSinr":"1","ensembleWeightLatency":"1","ensembleWeightLoad":"1","ensembleStickiness":"1"}},{"id":"20261117T105944Z-highway-latency_qos-s0","meta":{"run_id":"20261117T105944Z-highway-latency_qos-s0","scenario":"highway","policy":"latency_qos","config":"LatencyQos","command":"dash/run-experiment.sh --scenario highway --policy latency_qos --time 120s --seed 0 --name s0 --set '**.vector-recording=false'","sim_time":"120s","seed":"0","name":"s0","params":["**.vector-recording=false"],"overrides":["--**.vector-recording=false","--seed-set=0"],"image":"multiratvanet:latest","image_id":"sha256:9feec50026fe7ec726be84a029d216ad706b4bea4b021eb02461a66bd9b87b3d","repo_commit":"d55ae08c331dbfa29bf7ee515487d4360127e2b6","who":"vnet","host":"anjuna3","started":"2026-11-17T10:59:44Z","finished":"2026-11-17T11:04:33Z","exit_code":0},"status":"ok","summary":{"vehicles":17,"classes":[{"name":"safety","direction":"car to server","sent":15268.0,"received":14665.0,"pdr":0.9605056326958344,"within_deadline":0.9538249934503537,"deadline_ms":100.0,"throughput_mbps":0.1955333333333333,"delay_mean_ms":9.195165092353223,"delay_max_ms":1249.3817812959999},{"name":"infotainment","direction":"server to car","sent":60320.0,"received":57297.0,"pdr":0.949883952254642,"within_deadline":0.9498010610079576,"deadline_ms":1000.0,"throughput_mbps":4.77475,"delay_mean_ms":56.24235660983123,"delay_max_ms":3181.200143794}],"sent":75588.0,"received":71962.0,"pdr":0.9520294226596814,"throughput_mbps":4.970283333333334,"delay_mean_ms":46.65469835125289,"delay_max_ms":3181.200143794,"handovers":38.0,"handovers_per_vehicle":2.235294117647059,"handovers_failed":0.0,"ping_pong":0.0,"connectivity":0.9592198323939918,"outage_s":69.60000000000001,"interruption_count":75.0,"interruption_mean_ms":30.583432785373336,"interruption_max_ms":1002.05263448,"interruption_lost":15.0,"shares":{"DSRC":0.5537916448100729,"WiFi":0.07467972230075548,"NR":0.3715286328891716},"inputs":{"DSRC":{"SinrMargin":25.286432867598002,"Load":0.21282060713392942,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":1.5220367204364154},"WiFi":{"SinrMargin":24.778899600259226,"Load":0.057972158804555356,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":0.9480634586391659},"NR":{"SinrMargin":19.038512090835685,"Load":null,"Capacity":null,"LinkRate":16.004684296108515,"Latency":null,"ProbeRtt":73.10927147409735}}},"config":"LatencyQos","started":"2026-11-17T10:59:44Z","sim_time":120.0,"cellular_merged":false,"decisions":{"count":3050,"branches":{"start":17,"best":2445,"margin":346,"wait":77,"switch":10,"lost":28,"none":127},"rat_stats":{"DSRC":{"usable":0.8659016393442623,"rate":24.0},"WiFi":{"usable":0.7563934426229508,"rate":24.0},"NR":{"usable":0.7862295081967213,"rate":24.97}}},"decision":{"policy":"LatencyQos","decisionInterval":"0.5s","handoverExecDelay":"0s","pingPongWindow":"2s","startTime":"0.5s","timeToTrigger":"1s","sinrSwitchMargin":"3dB","loadSwitchMargin":"0.15","latencyBudget":"0.1s","ensembleWeightCoverage":"1","ensembleWeightSinr":"1","ensembleWeightLatency":"1","ensembleWeightLoad":"1","ensembleStickiness":"1"}},{"id":"20261117T105944Z-highway-latency_qos-s1","meta":{"run_id":"20261117T105944Z-highway-latency_qos-s1","scenario":"highway","policy":"latency_qos","config":"LatencyQos","command":"dash/run-experiment.sh --scenario highway --policy latency_qos --time 120s --seed 1 --name s1 --set '**.vector-recording=false'","sim_time":"120s","seed":"1","name":"s1","params":["**.vector-recording=false"],"overrides":["--**.vector-recording=false","--seed-set=1"],"image":"multiratvanet:latest","image_id":"sha256:9feec50026fe7ec726be84a029d216ad706b4bea4b021eb02461a66bd9b87b3d","repo_commit":"d55ae08c331dbfa29bf7ee515487d4360127e2b6","who":"vnet","host":"anjuna3","started":"2026-11-17T10:59:44Z","finished":"2026-11-17T11:04:44Z","exit_code":0},"status":"ok","summary":{"vehicles":17,"classes":[{"name":"safety","direction":"car to server","sent":15268.0,"received":14084.0,"pdr":0.9224521875818705,"within_deadline":0.9071260151951794,"deadline_ms":100.0,"throughput_mbps":0.18778666666666666,"delay_mean_ms":15.797929558382561,"delay_max_ms":5047.979796219},{"name":"infotainment","direction":"server to car","sent":69650.0,"received":63545.0,"pdr":0.9123474515434314,"within_deadline":0.9108686288585786,"deadline_ms":1000.0,"throughput_mbps":5.295416666666666,"delay_mean_ms":67.8971498629099,"delay_max_ms":5179.572377873}],"sent":84918.0,"received":77629.0,"pdr":0.9141642525730705,"throughput_mbps":5.483203333333333,"delay_mean_ms":58.444942327466144,"delay_max_ms":5179.572377873,"handovers":40.0,"handovers_per_vehicle":2.3529411764705883,"handovers_failed":0.0,"ping_pong":0.0,"connectivity":0.9138970342964665,"outage_s":144.1,"interruption_count":79.0,"interruption_mean_ms":26.26047270992405,"interruption_max_ms":1093.902997318,"interruption_lost":8.0,"shares":{"DSRC":0.4625007083496188,"WiFi":0.055119573465809,"NR":0.4823797181845727},"inputs":{"DSRC":{"SinrMargin":25.018245561527234,"Load":0.21965646451006882,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":2.7864083912713635},"WiFi":{"SinrMargin":24.78375299034912,"Load":0.04161971800662494,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":1.0026746801350335},"NR":{"SinrMargin":18.814795559457018,"Load":null,"Capacity":null,"LinkRate":16.03395989380023,"Latency":null,"ProbeRtt":74.88357868183688}}},"config":"LatencyQos","started":"2026-11-17T10:59:44Z","sim_time":120.0,"cellular_merged":false,"decisions":{"count":3050,"branches":{"start":17,"best":2421,"margin":222,"wait":82,"switch":11,"lost":29,"none":268},"rat_stats":{"DSRC":{"usable":0.7236065573770492,"rate":24.0},"WiFi":{"usable":0.7540983606557377,"rate":24.0},"NR":{"usable":0.7747540983606558,"rate":24.97}}},"decision":{"policy":"LatencyQos","decisionInterval":"0.5s","handoverExecDelay":"0s","pingPongWindow":"2s","startTime":"0.5s","timeToTrigger":"1s","sinrSwitchMargin":"3dB","loadSwitchMargin":"0.15","latencyBudget":"0.1s","ensembleWeightCoverage":"1","ensembleWeightSinr":"1","ensembleWeightLatency":"1","ensembleWeightLoad":"1","ensembleStickiness":"1"}},{"id":"20261117T105944Z-highway-sinr-s0","meta":{"run_id":"20261117T105944Z-highway-sinr-s0","scenario":"highway","policy":"sinr","config":"Sinr","command":"dash/run-experiment.sh --scenario highway --policy sinr --time 120s --seed 0 --name s0 --set '**.vector-recording=false'","sim_time":"120s","seed":"0","name":"s0","params":["**.vector-recording=false"],"overrides":["--**.vector-recording=false","--seed-set=0"],"image":"multiratvanet:latest","image_id":"sha256:9feec50026fe7ec726be84a029d216ad706b4bea4b021eb02461a66bd9b87b3d","repo_commit":"d55ae08c331dbfa29bf7ee515487d4360127e2b6","who":"vnet","host":"anjuna3","started":"2026-11-17T10:59:44Z","finished":"2026-11-17T11:04:28Z","exit_code":0},"status":"ok","summary":{"vehicles":17,"classes":[{"name":"safety","direction":"car to server","sent":15268.0,"received":14272.0,"pdr":0.9347655226617763,"within_deadline":0.9208147760020959,"deadline_ms":100.0,"throughput_mbps":0.19029333333333334,"delay_mean_ms":13.823622912546243,"delay_max_ms":2530.7365164790003},{"name":"infotainment","direction":"server to car","sent":63850.0,"received":58916.0,"pdr":0.9227251370399373,"within_deadline":0.9209083790133125,"deadline_ms":1000.0,"throughput_mbps":4.909666666666666,"delay_mean_ms":62.7039986862713,"delay_max_ms":2581.5074155579996}],"sent":79118.0,"received":73188.0,"pdr":0.9250486614929598,"throughput_mbps":5.099959999999999,"delay_mean_ms":53.17209833317237,"delay_max_ms":2581.5074155579996,"handovers":50.0,"handovers_per_vehicle":2.9411764705882355,"handovers_failed":0.0,"ping_pong":0.0,"connectivity":0.9199352834166006,"outage_s":134.79999999999998,"interruption_count":99.0,"interruption_mean_ms":20.329072005181818,"interruption_max_ms":538.544665006,"interruption_lost":8.0,"shares":{"DSRC":0.23215809520454278,"WiFi":0.42073203357023586,"NR":0.3471098712252225},"inputs":{"DSRC":{"SinrMargin":24.92717567770412,"Load":0.12405283936512562,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":0.7995695193289065},"WiFi":{"SinrMargin":24.624520504913296,"Load":0.1834946228690712,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":1.4106955276171902},"NR":{"SinrMargin":19.283295264796525,"Load":null,"Capacity":null,"LinkRate":16.392016836044633,"Latency":null,"ProbeRtt":60.3006400462067}}},"config":"Sinr","started":"2026-11-17T10:59:44Z","sim_time":120.0,"cellular_merged":false,"decisions":{"count":3046,"branches":{"start":17,"best":2431,"margin":155,"wait":141,"switch":39,"lost":11,"none":252},"rat_stats":{"DSRC":{"usable":0.7173342087984241,"rate":24.0},"WiFi":{"usable":0.7688772160210111,"rate":24.0},"NR":{"usable":0.7728168089297439,"rate":24.97}}},"decision":{"policy":"Sinr","decisionInterval":"0.5s","handoverExecDelay":"0s","pingPongWindow":"2s","startTime":"0.5s","timeToTrigger":"1s","sinrSwitchMargin":"3dB","loadSwitchMargin":"0.15","latencyBudget":"0.1s","ensembleWeightCoverage":"1","ensembleWeightSinr":"1","ensembleWeightLatency":"1","ensembleWeightLoad":"1","ensembleStickiness":"1"}},{"id":"20261117T105944Z-highway-sinr-s1","meta":{"run_id":"20261117T105944Z-highway-sinr-s1","scenario":"highway","policy":"sinr","config":"Sinr","command":"dash/run-experiment.sh --scenario highway --policy sinr --time 120s --seed 1 --name s1 --set '**.vector-recording=false'","sim_time":"120s","seed":"1","name":"s1","params":["**.vector-recording=false"],"overrides":["--**.vector-recording=false","--seed-set=1"],"image":"multiratvanet:latest","image_id":"sha256:9feec50026fe7ec726be84a029d216ad706b4bea4b021eb02461a66bd9b87b3d","repo_commit":"d55ae08c331dbfa29bf7ee515487d4360127e2b6","who":"vnet","host":"anjuna3","started":"2026-11-17T10:59:44Z","finished":"2026-11-17T11:04:17Z","exit_code":0},"status":"ok","summary":{"vehicles":17,"classes":[{"name":"safety","direction":"car to server","sent":15268.0,"received":14473.0,"pdr":0.9479303117631648,"within_deadline":0.9347655226617763,"deadline_ms":100.0,"throughput_mbps":0.19297333333333333,"delay_mean_ms":12.885479988375597,"delay_max_ms":5047.979796219},{"name":"infotainment","direction":"server to car","sent":67250.0,"received":62510.0,"pdr":0.9295167286245353,"within_deadline":0.9280743494423792,"deadline_ms":1000.0,"throughput_mbps":5.2091666666666665,"delay_mean_ms":64.6684701430042,"delay_max_ms":5179.572377873}],"sent":82518.0,"received":76983.0,"pdr":0.9329237257325674,"throughput_mbps":5.40214,"delay_mean_ms":54.933136153578744,"delay_max_ms":5179.572377873,"handovers":43.0,"handovers_per_vehicle":2.5294117647058822,"handovers_failed":0.0,"ping_pong":0.0,"connectivity":0.9186375345292564,"outage_s":136.1,"interruption_count":85.0,"interruption_mean_ms":13.713845949917648,"interruption_max_ms":444.536068317,"interruption_lost":0.0,"shares":{"DSRC":0.2353489461481042,"WiFi":0.4170438562905594,"NR":0.34760719756133585},"inputs":{"DSRC":{"SinrMargin":24.93307954349412,"Load":0.11781173908726723,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":0.8868076873350136},"WiFi":{"SinrMargin":24.789969498704764,"Load":0.18535500896745527,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":1.1055618886084138},"NR":{"SinrMargin":18.70193273122371,"Load":null,"Capacity":null,"LinkRate":15.947843835291625,"Latency":null,"ProbeRtt":55.62544080465277}}},"config":"Sinr","started":"2026-11-17T10:59:44Z","sim_time":120.0,"cellular_merged":false,"decisions":{"count":3046,"branches":{"start":17,"best":2471,"margin":122,"wait":132,"switch":33,"lost":10,"none":261},"rat_stats":{"DSRC":{"usable":0.7176625082074852,"rate":24.0},"WiFi":{"usable":0.7547603414313854,"rate":24.0},"NR":{"usable":0.7918581746552856,"rate":24.97}}},"decision":{"policy":"Sinr","decisionInterval":"0.5s","handoverExecDelay":"0s","pingPongWindow":"2s","startTime":"0.5s","timeToTrigger":"1s","sinrSwitchMargin":"3dB","loadSwitchMargin":"0.15","latencyBudget":"0.1s","ensembleWeightCoverage":"1","ensembleWeightSinr":"1","ensembleWeightLatency":"1","ensembleWeightLoad":"1","ensembleStickiness":"1"}},{"id":"20261117T105944Z-highway-sinr-s2","meta":{"run_id":"20261117T105944Z-highway-sinr-s2","scenario":"highway","policy":"sinr","config":"Sinr","command":"dash/run-experiment.sh --scenario highway --policy sinr --time 120s --seed 2 --name s2 --set '**.vector-recording=false'","sim_time":"120s","seed":"2","name":"s2","params":["**.vector-recording=false"],"overrides":["--**.vector-recording=false","--seed-set=2"],"image":"multiratvanet:latest","image_id":"sha256:9feec50026fe7ec726be84a029d216ad706b4bea4b021eb02461a66bd9b87b3d","repo_commit":"d55ae08c331dbfa29bf7ee515487d4360127e2b6","who":"vnet","host":"anjuna3","started":"2026-11-17T10:59:44Z","finished":"2026-11-17T11:04:31Z","exit_code":0},"status":"ok","summary":{"vehicles":17,"classes":[{"name":"safety","direction":"car to server","sent":15268.0,"received":14461.0,"pdr":0.947144354204873,"within_deadline":0.9339140686402935,"deadline_ms":100.0,"throughput_mbps":0.19281333333333334,"delay_mean_ms":12.362431603817164,"delay_max_ms":1637.352645943},{"name":"infotainment","direction":"server to car","sent":61280.0,"received":57431.0,"pdr":0.9371899477806789,"within_deadline":0.9363577023498695,"deadline_ms":1000.0,"throughput_mbps":4.785916666666666,"delay_mean_ms":60.97640327584945,"delay_max_ms":2634.866146489}],"sent":76548.0,"received":71892.0,"pdr":0.9391754193447249,"throughput_mbps":4.97873,"delay_mean_ms":51.197754130614115,"delay_max_ms":2634.866146489,"handovers":44.0,"handovers_per_vehicle":2.588235294117647,"handovers_failed":0.0,"ping_pong":0.0,"connectivity":0.9266002448207924,"outage_s":120.19999999999999,"interruption_count":86.0,"interruption_mean_ms":11.59310867627907,"interruption_max_ms":235.254446597,"interruption_lost":4.0,"shares":{"DSRC":0.23462768480740534,"WiFi":0.42142355308455587,"NR":0.34394876210803815},"inputs":{"DSRC":{"SinrMargin":25.02021755320359,"Load":0.10957711105962249,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":0.7950970821284542},"WiFi":{"SinrMargin":24.579054631497062,"Load":0.18100718057110116,"Capacity":null,"LinkRate":24.0,"Latency":null,"ProbeRtt":1.490997029293044},"NR":{"SinrMargin":18.852878281051968,"Load":null,"Capacity":null,"LinkRate":15.989764483200835,"Latency":null,"ProbeRtt":59.528578254570064}}},"config":"Sinr","started":"2026-11-17T10:59:44Z","sim_time":120.0,"cellular_merged":false,"decisions":{"count":3048,"branches":{"start":17,"best":2485,"margin":142,"wait":141,"switch":33,"lost":11,"none":219},"rat_stats":{"DSRC":{"usable":0.71751968503937,"rate":24.0},"WiFi":{"usable":0.764763779527559,"rate":24.0},"NR":{"usable":0.7975721784776902,"rate":24.97}}},"decision":{"policy":"Sinr","decisionInterval":"0.5s","handoverExecDelay":"0s","pingPongWindow":"2s","startTime":"0.5s","timeToTrigger":"1s","sinrSwitchMargin":"3dB","loadSwitchMargin":"0.15","latencyBudget":"0.1s","ensembleWeightCoverage":"1","ensembleWeightSinr":"1","ensembleWeightLatency":"1","ensembleWeightLoad":"1","ensembleStickiness":"1"}}],"maps":{},"bench":{"scenarios":["highway"],"seeds":["0","1","2"],"time":"120s","policies":["coverage_priority","sinr","latency_qos","load","ensemble","only_dsrc","only_wifi","only_nr"],"sets":[],"standard":true,"extra":[],"image":"multiratvanet:latest","repo_commit":"d55ae08c331dbfa29bf7ee515487d4360127e2b6","started":"2026-11-17T10:59:44Z"}}</script>
+
+<script>
+"use strict";
+const DATA = JSON.parse(document.getElementById("data").textContent);
+const RUNS = DATA.runs;
+const HEAVY = {};
+const heavy = r => HEAVY[r.id] || null;
+async function loadHeavy(r) {
+  if (r.id in HEAVY) return;
+  const s = [...document.querySelectorAll("script.heavy")].find(x => x.dataset.run === r.id);
+  HEAVY[r.id] = null;
+  if (!s || !window.DecompressionStream) return;
+  try {
+    const bytes = Uint8Array.from(atob(s.textContent.trim()), c => c.charCodeAt(0));
+    const text = await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+    HEAVY[r.id] = JSON.parse(text);
+  } catch (e) { console.error("could not unpack run data", e); }
+}
+let SHOWING = null;
+async function showRun(r) {
+  SHOWING = r.id;
+  await loadHeavy(r);
+  if (SHOWING === r.id) renderRun(r);
+}
+// fixed colour per RAT (Cellular takes 5G's when LTE and 5G share one interface)
+const RAT_COLOR = { DSRC: "--s1", WiFi: "--s2", NR: "--s3", Cellular: "--s3", LTE: "--s4", Unconnected: "--s5", "": "--s5" };
+const RAT_LABEL = { DSRC: "DSRC", WiFi: "Wi-Fi", NR: "5G", LTE: "LTE", Cellular: "Cellular", Unconnected: "Not connected", "": "none" };
+const RAT_BY_IDX = ["", "DSRC", "WiFi", "NR", "LTE"];
+const INFRA_LABEL = { DSRC: "DSRC roadside unit", WiFi: "Wi-Fi access point", NR: "5G cell tower", LTE: "LTE cell tower" };
+const ratText = s => (s || "").replace(/\bWIFI\b/g, "Wi-Fi").replace(/\bNR\b/g, "5G");
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const el = (tag, attrs = {}, ...kids) => {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v == null) continue;
+    if (k === "class") e.className = v; else if (k === "text") e.textContent = v; else e.setAttribute(k, v);
+  }
+  for (const k of kids) if (k != null && k !== false) e.append(k);
+  return e;
+};
+const svgEl = (tag, attrs = {}) => {
+  const e = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  return e;
+};
+const fmt = (v, d = 1) => v == null || !isFinite(v) ? "–" : Number(v).toLocaleString(undefined, { maximumFractionDigits: d, minimumFractionDigits: 0 });
+const pct = (v, d = 1) => v == null ? "–" : (v * 100).toFixed(d) + "%";
+const when = s => s ? new Date(s).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "–";
+const ratDot = rat => el("span", { class: "dot", style: `background:var(${RAT_COLOR[rat] || "--s5"})` });
+const ratName = rat => el("span", {}, ratDot(rat), RAT_LABEL[rat] ?? rat);
+const label = r => (r.meta && r.meta.scenario ? `${r.meta.scenario} · ${r.meta.policy}` : (r.config || r.id)) + (r.meta && r.meta.name ? ` · ${r.meta.name}` : "");
+const className = n => ({ safety: "Safety messages", infotainment: "Infotainment" })[n] || n.charAt(0).toUpperCase() + n.slice(1);
+
+function section(id, title, sub) {
+  const s = el("section", { id });
+  s.append(el("h2", { text: title }));
+  if (sub) s.append(el("p", { class: "sub", text: sub }));
+  return s;
+}
+function kvList(pairs) {
+  const dl = el("dl", { class: "kv" });
+  for (const [k, v] of pairs) {
+    if (v == null || v === "" || (Array.isArray(v) && !v.length)) continue;
+    const dd = el("dd");
+    if (Array.isArray(v)) dd.append(el("ul", {}, ...v.map(x => el("li", { text: x }))));
+    else if (v instanceof Node) dd.append(v); else dd.textContent = String(v);
+    dl.append(el("dt", { text: k }), dd);
+  }
+  return dl;
+}
+function simpleTable(head, rows, numeric = []) {
+  const t = el("table");
+  t.append(el("thead", {}, el("tr", {}, ...head.map((h, i) => el("th", { class: numeric.includes(i) ? "n" : null, text: h })))));
+  const b = el("tbody");
+  for (const row of rows) b.append(el("tr", {}, ...row.map((c, i) => el("td", { class: numeric.includes(i) ? "n" : null, text: c == null || c === "" ? "–" : String(c) }))));
+  t.append(b);
+  return el("div", { class: "scroll" }, t);
+}
+function copyText(text, btn) {
+  const done = () => { btn.textContent = "Copied"; setTimeout(() => (btn.textContent = "Copy"), 1500); };
+  if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(done, () => fallback());
+  else fallback();
+  function fallback() {
+    const ta = el("textarea", { style: "position:fixed;opacity:0" }); ta.value = text; document.body.append(ta);
+    ta.select(); try { document.execCommand("copy"); done(); } catch (e) { btn.textContent = "Select and copy"; } ta.remove();
+  }
+}
+
+// ------------------------------------------------------------------ run, scenario, seed
+function renderRunMeta(r) {
+  const m = r.meta || {}, u = r.setup || {}, s = r.summary || {};
+  const sec = section("s-run", "Run");
+  if (r.command) {
+    const btn = el("button", { type: "button", text: "Copy" });
+    btn.addEventListener("click", () => copyText(r.command, btn));
+    sec.append(el("div", { class: "cmd" }, el("pre", { text: r.command, "aria-label": "Command that repeats this run" }), btn));
+  }
+  const g = el("div", { class: "grid3" });
+
+  const took = m.started && m.finished ? (new Date(m.finished) - new Date(m.started)) / 1000 : null;
+  const runCard = el("div", { class: "card" }, el("h3", { text: "This run" }), kvList([
+    ["Started", when(r.started)], ["Took", took != null ? `${fmt(took / 60, 1)} min (wall clock)` : null],
+    ["Status", r.status === "ok" ? "completed" : r.status + (m.exit_code ? ` (exit ${m.exit_code})` : "")],
+    ["Label", m.name], ["Ran by", m.who && m.host ? `${m.who} on ${m.host}` : m.who],
+    ["Image", m.image], ["Code version", m.repo_commit], ["Changed settings", (m.params || []).length ? m.params : "none, all from omnetpp.ini"],
+    ["Results folder", el("span", { class: "mono", text: r.result_dir || r.id })]]));
+  if (r.log) runCard.append(el("details", r.status === "ok" ? {} : { open: "" }, el("summary", { text: "Console output" }), el("pre", { class: "log", text: r.log })));
+
+  const M = r.map && DATA.maps[r.map], d = r.demand;
+  const count = {};
+  for (const p of r.infra || []) count[p.rat] = (count[p.rat] || 0) + 1;
+  const infraText = ["DSRC", "WiFi", "NR", "LTE"].filter(k => (u.rats || []).some(x => x.rat === k))
+    .map(k => `${count[k] || 0} ${{ DSRC: "RSU", WiFi: "Wi-Fi AP", NR: "5G cell", LTE: "LTE cell" }[k]}${(count[k] || 0) === 1 ? "" : "s"}`).join(" · ");
+  const traffic = (u.traffic || []).map(t => `${className(t.name)}: ${t.packet} every ${t.interval}` +
+    (t.mode === "onoff" ? ` in bursts (on ${t.on}, off ${t.off})` : "") + (t.kbps ? `, ${fmt(t.kbps, 0)} kbit/s while sending` : "") +
+    (t.deadline ? `, must arrive within ${t.deadline}` : ""));
+  const scen = el("div", { class: "card" }, el("h3", { text: "Scenario" }), kvList([
+    ["Name", m.scenario ? `${m.scenario} (config ${r.config})` : r.config],
+    ["What it is", u.descriptions && u.descriptions[0]],
+    ["Roads", M ? `${M.geo ? "real map data (OpenStreetMap)" : "synthetic road"}, ${fmt(M.width_m / 1000, 1)} × ${fmt(M.height_m / 1000, 1)} km, ${M.lane_count} lanes, ${fmt(M.lane_km, 1)} km of lane` : u.launch],
+    ["Cars", [`${fmt(s.vehicles, 0)} cars` + (d && d.max_speed ? `, up to ${fmt(d.max_speed, 0)} m/s (${fmt(d.max_speed * 3.6, 0)} km/h)` : ""),
+              ...((d && d.flows) || [])]],
+    ["Radio infrastructure", infraText],
+    ["Each car sends", traffic.length ? traffic : null],
+    ["Simulated time", r.sim_time != null ? `${fmt(r.sim_time, 0)} s` : null]]));
+  if (u.config) {
+    const overridden = new Set((m.overrides || []).map(o => o.replace(/^--/, "").split("=")[0]));
+    const det = el("details", {}, el("summary", { text: `All ${u.config.length} settings from omnetpp.ini` }));
+    det.append(el("p", { class: "note", text: "First match wins, as in OMNeT++. Settings changed for this run are marked." }),
+               simpleTable(["Key", "Value", ""], u.config.map(([k, v]) => [k, v, overridden.has(k) ? "changed" : ""])));
+    scen.append(det);
+  }
+
+  const sd = r.seed || {};
+  const seed = el("div", { class: "card" }, el("h3", { text: "Seed" }), kvList([
+    ["Seed set", sd.seedset ?? m.seed ?? "0"],
+    ["Changes with the seed", ["when each car first decides and starts sending", "infotainment burst lengths",
+                               "5G fading and shadowing", "Wi-Fi/DSRC backoff timers"]],
+    ["Same in every seed", sd.sumo_from_run
+      ? `how cars drive. SUMO's seed is ${sd.sumo}, taken from the run number, so --seed does not change traffic.`
+      : `how cars drive (SUMO seed fixed at ${sd.sumo}).`],
+    ["Random generator", sd.rng ? `${sd.rng.replace(/^c/, "")}${sd.num_rngs ? `, ${sd.num_rngs} streams` : ""}` : "OMNeT++ default (Mersenne Twister)"]]),
+    el("p", { class: "note", text: "Same code, settings and seed set give the same results, bit for bit." }));
+  g.append(runCard, scen, seed);
+  sec.append(g);
+  return sec;
+}
+
+// ------------------------------------------------------------------ map
+let MAP = null, PLAY = null;
+function renderMapSection(r) {
+  const H = heavy(r), D = r.decisions;
+  const sec = section("s-map", "Map", "Where the roads, roadside units, access points and cell towers are, where each radio actually worked, and which radio every car was on.");
+  const card = el("div", { class: "card" });
+  const bar = el("div", { class: "mapbar" });
+  const covRats = D ? D.rats.filter(k => D.rat_stats[k] && D.rat_stats[k].usable > 0) : [];
+  const seg = el("div", { class: "seg" }, el("span", { class: "muted", text: "Coverage:" }));
+  const covBtns = {};
+  for (const k of ["", ...covRats]) {
+    const b = el("button", { type: "button", text: k ? RAT_LABEL[k] : "Off", class: k ? null : "on" });
+    covBtns[k] = b; seg.append(b);
+  }
+  if (covRats.length) bar.append(seg);
+  const tEnd = r.sim_time || 0;
+  const slider = el("input", { type: "range", min: 0, max: tEnd, step: 0.5, value: Math.min(tEnd, 30), "aria-label": "Simulation time" });
+  const out = el("output");
+  const play = el("button", { type: "button", text: "Play" });
+  if (H && H.tracks && Object.keys(H.tracks).length) bar.append(el("div", { class: "timebar" }, el("span", { class: "muted", text: "Cars at" }), slider, out, play));
+  card.append(bar);
+  const div = el("div", { id: "map" });
+  card.append(div);
+  const lg = el("div", { class: "legend", style: "margin-top:10px" });
+  lg.append(el("span", {}, el("span", { class: "key", style: "background:var(--road);height:5px" }), "road (true lane width)"));
+  for (const k of ["DSRC", "WiFi", "NR", "LTE"]) if ((r.infra || []).some(p => p.rat === k))
+    lg.append(el("span", {}, el("span", { class: "dot", style: `background:var(${RAT_COLOR[k]});width:11px;height:11px;border:2px solid var(--surface-1);box-shadow:0 0 0 1px var(--border)` }), INFRA_LABEL[k]));
+  if (H && H.tracks) lg.append(el("span", {}, el("span", { class: "dot", style: "background:var(--text-secondary);width:7px;height:7px" }), "car, coloured by the radio it is on"));
+  card.append(lg);
+  const M = r.map && DATA.maps[r.map];
+  const notes = [];
+  if (M) notes.push(M.geo ? `Roads from ${M.name}, drawn lane by lane over OpenStreetMap.` : `${M.name} is a synthetic road with no real-world location. Lanes are drawn at their true width; zoom in to see them.`);
+  else notes.push("Road network file not found next to this report; only the infrastructure is shown.");
+  if (D) notes.push(`Coverage is measured, not assumed: each ${fmt(D.coverage_cell_m, 0)} m square is shaded by how often cars there could use that radio. Hover a square for details.`);
+  else notes.push("Coverage and cars come from the decision log, which this run predates. Rerun it to see them.");
+  card.append(el("p", { class: "note", text: notes.join(" ") }));
+  sec.append(card);
+  return { sec, init: () => initMap(r, div, { covBtns, slider, out, play }) };
+}
+
+function initMap(r, div, ui) {
+  if (MAP) { MAP.remove(); MAP = null; }
+  if (PLAY) { clearInterval(PLAY); PLAY = null; }
+  if (!window.L) { div.replaceChildren(el("div", { class: "empty", text: "The map library could not load (no internet connection?)." })); return; }
+  const M = r.map && DATA.maps[r.map], H = heavy(r), geo = !!(M && M.geo);
+  const map = L.map(div, { crs: geo ? L.CRS.EPSG3857 : L.CRS.Simple, preferCanvas: true, zoomSnap: 0.25, zoomDelta: 0.5,
+                           minZoom: geo ? 9 : -6, maxZoom: geo ? 21 : 6, attributionControl: geo, scrollWheelZoom: true });
+  MAP = map;
+  if (geo) L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 21, maxNativeZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' }).addTo(map);
+  L.control.scale({ imperial: false }).addTo(map);
+  const bounds = L.latLngBounds([]);
+  const road = css("--road");
+  const lanes = [];
+  if (M) {
+    for (const [w, lines] of Object.entries(M.lanes)) for (const flat of lines) {
+      const ll = []; for (let i = 0; i < flat.length; i += 2) ll.push([flat[i], flat[i + 1]]);
+      ll.forEach(p => bounds.extend(p));
+      lanes.push([+w, L.polyline(ll, { color: road, weight: 1, opacity: geo ? 0.75 : 1, lineCap: "butt", interactive: false }).addTo(map)]);
+    }
+    for (const flat of M.junctions) {
+      const ll = []; for (let i = 0; i < flat.length; i += 2) ll.push([flat[i], flat[i + 1]]);
+      L.polygon(ll, { stroke: false, fillColor: road, fillOpacity: geo ? 0.75 : 1, interactive: false }).addTo(map);
+    }
+  }
+  for (const p of r.infra || []) bounds.extend(p.pos);
+  const lat0 = geo && bounds.isValid() ? bounds.getCenter().lat : 0;
+  const pxPerM = z => geo ? Math.pow(2, z) * 256 / (40075016.686 * Math.cos(lat0 * Math.PI / 180)) : Math.pow(2, z);
+  const restyle = () => { const k = pxPerM(map.getZoom()); for (const [w, pl] of lanes) pl.setStyle({ weight: Math.max(1.2, w * k * 0.88) }); };
+  map.on("zoomend", restyle);
+
+  // measured coverage, one layer per RAT, built when first shown
+  const layers = {};
+  let shown = null;
+  const coverage = k => {
+    if (layers[k]) return layers[k];
+    const g = L.layerGroup(), col = css(RAT_COLOR[k]);
+    for (const [a0, b0, a1, b1, share, n, margin, via] of (H && H.coverage[k]) || []) {
+      L.rectangle([[a0, b0], [a1, b1]], { stroke: false, fillColor: col, fillOpacity: 0.08 + 0.62 * share })
+        .bindTooltip(`<b>${RAT_LABEL[k]}</b> usable ${Math.round(share * 100)}% of the time here<br>${n} samples` +
+          (share > 0 ? `, signal ${margin > 0 ? "+" : ""}${margin} dB vs minimum` : "") + (via ? `<br>served by ${via}` : ""), { sticky: true })
+        .addTo(g);
+    }
+    return (layers[k] = g);
+  };
+  for (const [k, b] of Object.entries(ui.covBtns)) b.addEventListener("click", () => {
+    if (shown) map.removeLayer(layers[shown]);
+    shown = k || null;
+    if (shown) coverage(shown).addTo(map);
+    for (const [kk, bb] of Object.entries(ui.covBtns)) bb.classList.toggle("on", kk === k);
+    carLayer.eachLayer(l => l.bringToFront());
+  });
+
+  // infrastructure
+  const crowded = (r.infra || []).length > 12;  // many markers: labels on hover only
+  for (const p of r.infra || []) {
+    L.circleMarker(p.pos, { radius: 8, color: css("--text-primary"), weight: 2, fillColor: css(RAT_COLOR[p.rat]), fillOpacity: 1 })
+      .bindTooltip(p.label, { permanent: !crowded, direction: "top", offset: [0, -7], className: crowded ? null : "lbl" })
+      .bindPopup(`${INFRA_LABEL[p.rat]}<br><span class="mono">${p.name}</span>`).addTo(map);
+  }
+
+  // cars at time t
+  const carLayer = L.layerGroup().addTo(map);
+  const cars = {};
+  const tracks = (H && H.tracks) || {};
+  const at = t => {
+    ui.out.textContent = `t = ${fmt(t, 1)} s`;
+    let n = 0;
+    for (const [car, f] of Object.entries(tracks)) {
+      let lo = 0, hi = f.length / 4 - 1, i = -1;
+      while (lo <= hi) { const mid = (lo + hi) >> 1; if (f[mid * 4] <= t) { i = mid; lo = mid + 1; } else hi = mid - 1; }
+      const live = i >= 0 && t - f[i * 4] <= 1.0;
+      let mk = cars[car];
+      if (!live) { if (mk) carLayer.removeLayer(mk); continue; }
+      const rat = RAT_BY_IDX[f[i * 4 + 3]] || "";
+      if (!mk) mk = cars[car] = L.circleMarker([0, 0], { radius: 4, weight: 1, color: css("--surface-1"), fillOpacity: 1 }).bindTooltip("");
+      mk.setLatLng([f[i * 4 + 1], f[i * 4 + 2]]).setStyle({ fillColor: css(RAT_COLOR[rat]) });
+      mk.setTooltipContent(`Car ${car} · on ${RAT_LABEL[rat]}`);
+      if (!carLayer.hasLayer(mk)) carLayer.addLayer(mk);
+      n++;
+    }
+  };
+  ui.slider.addEventListener("input", () => at(+ui.slider.value));
+  ui.play.addEventListener("click", () => {
+    if (PLAY) { clearInterval(PLAY); PLAY = null; ui.play.textContent = "Play"; return; }
+    if (+ui.slider.value >= +ui.slider.max) ui.slider.value = 0;
+    ui.play.textContent = "Pause";
+    const step = Math.max(0.5, Math.round((+ui.slider.max / 300) * 2) / 2);
+    PLAY = setInterval(() => {
+      const v = Math.min(+ui.slider.max, +ui.slider.value + step);
+      ui.slider.value = v; at(v);
+      if (v >= +ui.slider.max) { clearInterval(PLAY); PLAY = null; ui.play.textContent = "Play"; }
+    }, 100);
+  });
+  if (Object.keys(tracks).length) at(+ui.slider.value);
+
+  // fit: a wide road gets a shorter map
+  if (bounds.isValid()) {
+    if (!geo && M) div.style.height = Math.round(Math.max(240, Math.min(460, div.clientWidth * Math.max(M.height_m / M.width_m, 0.12) + 120))) + "px";
+    map.invalidateSize();
+    map.fitBounds(bounds.pad(0.04));
+  } else map.setView([0, 0], 0);
+  restyle();
+}
+
+// ------------------------------------------------------------------ policy
+const POLICY = {
+  CoveragePriority: { what: "Prefers the short-range radios. Picks the first usable RAT in a fixed order.",
+                      top: "the first usable RAT in the order DSRC → Wi-Fi → 5G → LTE", better: null, key: "ok" },
+  Sinr: { what: "Picks the RAT with the strongest signal. Signal is compared as dB above the lowest SINR each RAT can still use, since raw SINR means different things for Wi-Fi and 5G.",
+          top: "the usable RAT whose signal is furthest above its minimum", better: d => `at least ${d.sinrSwitchMargin || "3dB"} more`, key: "sinr" },
+  LatencyQos: { what: "Picks the RAT with the highest link rate among those whose latency (half the round trip of the car's own probes) fits the budget.",
+                top: d => `the usable RAT with the highest link rate whose probe latency is within ${d.latencyBudget || "100ms"} (if none fit: the lowest latency)`,
+                better: () => "at least 25% more link rate", key: "rate" },
+  Load: { what: "Picks the least busy RAT, to spread cars across the networks. Only DSRC and Wi-Fi have a load figure (the car's radio senses how busy the channel is); 5G is the fallback when neither is usable.",
+          top: "the usable RAT with the lowest sensed load", better: d => `at least ${Math.round(parseFloat(d.loadSwitchMargin || 0.15) * 100)} points less busy`, key: "load" },
+  Ensemble: { what: "Lets the four policies above vote and goes with the most votes.", key: "all" },
+  Ml: { what: "Hook for an outside machine-learning agent. Nothing drives it yet, so it behaves like CoveragePriority. It is left out of comparisons.", key: "all" },
+  ExampleSplit: { what: "Example of a policy written against the policy interface: sends each traffic class over its own RAT.", key: "all" },
+  OnlyDsrc: { what: "Baseline: uses DSRC and nothing else. Shows what one RAT achieves on its own.", rat: "DSRC", key: "ok" },
+  OnlyWifi: { what: "Baseline: uses Wi-Fi and nothing else. Shows what one RAT achieves on its own.", rat: "Wi-Fi", key: "ok" },
+  OnlyNr: { what: "Baseline: uses 5G and nothing else. Shows what one RAT achieves on its own.", rat: "5G", key: "ok" },
+};
+const WHY = {
+  start: () => "First connection", none: () => "Nothing usable, kept as is", lost: () => "Its RAT stopped working, switched at once",
+  best: () => "Already on the top pick", margin: d => `Stayed: ${ratText(d).replace(/^(\S+) /, "$1 only ").replace(/;/g, ",")}`,
+  wait: d => `Waiting: ${ratText(d).replace(/ for /, " ahead for ").replace(/;/g, ",")}`, switch: () => "Switched: better for long enough",
+  sticky: d => `Stayed: close enough in the vote (${ratText(d).replace(/^votes: /, "").replace(/;/g, ",")})`,
+  "": d => d ? ratText(d) : "Policy's choice",
+};
+const pv = (v, d) => typeof v === "function" ? v(d) : v;
+
+function policySteps(name, d) {
+  const P = POLICY[name] || {}, ttt = d.timeToTrigger || "1s";
+  if (name === "Ml" || name === "ExampleSplit") return null;
+  if (P.rat) return [
+    { q: `Is ${P.rat} usable?`, exit: ["No", "none", "Keep things as they are (stay unconnected, or on " + P.rat + " until it works again)"] },
+    { q: "Is the car connected yet?", exit: ["No", "start", `Connect to ${P.rat}`], last: ["Yes", "best", "Stay"] },
+  ];
+  if (name === "Ensemble") {
+    const w = [["coverage", d.ensembleWeightCoverage], ["signal", d.ensembleWeightSinr], ["latency", d.ensembleWeightLatency], ["load", d.ensembleWeightLoad]];
+    return [
+      { q: `Each of the four policies names the RAT it prefers right now, by its own rules. Votes count ${w.map(([k, v]) => `${k} ×${v ?? 1}`).join(", ")}.` },
+      { q: "Did any of them name a usable RAT?", exit: ["No", "none", "Keep things as they are"] },
+      { q: "Is the car connected yet?", exit: ["No", "start", "Connect to the RAT with the most votes"] },
+      { q: "Is the RAT it is on still usable?", exit: ["No", "lost", "Switch to the RAT with the most votes, now"] },
+      { q: "Does that RAT have the most votes? (ties go to DSRC, Wi-Fi, 5G, LTE in that order)", exit: ["Yes", "best", "Stay"] },
+      { q: `Is it within ${d.ensembleStickiness ?? 1} vote of the leader?`, exit: ["Yes", "sticky", "Stay"] },
+      { q: `Has the leader stayed ahead for ${ttt}?`, exit: ["No", "wait", "Stay, check again next time"], last: ["Yes", "switch", "Switch to the leader"] },
+    ];
+  }
+  return [
+    { q: "Is any RAT usable?", exit: ["No", "none", "Keep things as they are"] },
+    { q: "Is the car connected yet?", exit: ["No", "start", "Connect to the top pick"] },
+    { q: "Is the RAT it is on still usable?", exit: ["No", "lost", "Switch to the top pick, now"] },
+    { q: "Is it already on the top pick?", exit: ["Yes", "best", "Stay"] },
+    P.better ? { q: `Is the top pick better by enough? (needs ${pv(P.better, d)})`, exit: ["No", "margin", "Stay"] } : null,
+    { q: `Has the top pick stayed ahead for ${ttt}?`, exit: ["No", "wait", "Stay, check again next time"], last: ["Yes", "switch", "Switch to it"] },
+  ].filter(Boolean);
+}
+
+function renderPolicySection(r) {
+  const u = r.setup || {}, d = u.decision || {}, name = d.policy || "?", P = POLICY[name] || {};
+  const D = r.decisions, total = D ? D.count : 0;
+  const sec = section("s-policy", `Policy: ${name}`, P.what);
+  const g = el("div", { class: "grid2" });
+
+  const treeCard = el("div", { class: "card" }, el("h3", { text: `What each car does every ${d.decisionInterval || "0.5s"}` }));
+  if (P.top) treeCard.append(el("div", { class: "toppick" }, el("b", { text: "Top pick" }), ` = ${pv(P.top, d)}.`));
+  const steps = policySteps(name, d);
+  if (!steps) treeCard.append(el("p", { class: "muted", text: "No decision tree: the choice comes from outside the simulation." }));
+  else {
+    const ol = el("ol", { class: "tree" });
+    const exitEl = ([w, key, text]) => {
+      const n = D ? (D.branches[key] || 0) : null;
+      return el("div", { class: "exit" + (n && n / total > 0.05 && key !== "best" ? " hot" : "") },
+        el("span", { class: "when", text: w + " →" }), el("span", { text }),
+        n != null ? el("span", { class: "cnt", text: `${fmt(n, 0)} (${n && n / total < 0.001 ? "<0.1%" : pct(n / total, 1)})` }) : null);
+    };
+    let i = 0;
+    for (const st of steps) {
+      i++;
+      const body = el("div", {}, el("div", { class: "q", text: st.q }));
+      if (st.exit) body.append(exitEl(st.exit));
+      if (st.last) body.append(exitEl(st.last));
+      ol.append(el("li", {}, el("span", { class: "num", text: i }), body));
+      if (i < steps.length) ol.append(el("li", {}, el("span", { class: "rail" }), el("span", { class: "cont", text: st.exit ? (st.exit[0] === "No" ? "Yes ↓" : "No ↓") : "↓" })));
+    }
+    treeCard.append(ol);
+    treeCard.append(el("p", { class: "note", text: D ? `Counts: how often each outcome happened in this run (${fmt(total, 0)} decisions, all cars).`
+                                                     : "This run predates the decision log, so there are no counts. Rerun it to see them." }));
+  }
+
+  const sm = u.signal_model || {};
+  const measured = (sm.signalSource || "proxy") === "measured";
+  const set = el("div", { class: "card" }, el("h3", { text: "Settings" }), kvList([
+    ["Decides every", d.decisionInterval],
+    ["First decision", d.startTime ? `${d.startTime} after the car appears, plus a random offset so cars don't all decide at once` : null],
+    ["Waits before switching", P.rat ? null : `${d.timeToTrigger || "1s"} (time-to-trigger: a better RAT must stay ahead this long)` + (name === "Ensemble" ? ", applied to the vote's outcome" : "")],
+    ["Switch cost", d.handoverExecDelay && parseFloat(d.handoverExecDelay) > 0 ? `${d.handoverExecDelay} extra, plus what the radios cost` : "only what the simulated radios cost (no extra delay)"],
+    ["Inputs come from", measured ? "measurements during the run" : "a distance-based guess (proxy mode, old behaviour)"]]));
+  set.append(el("h3", { text: "What the policy reads, per RAT", style: "margin-top:14px" }));
+  const H0 = r.decisions || {};
+  set.append(kvList(H0.inputs === "capacity" ? [
+    ["Usable", "measured in the last 0.5 s, signal above the RAT's minimum, and for Wi-Fi/DSRC connected to an AP/RSU"],
+    ["Signal", "estimated uplink SINR, as dB above the lowest SINR the RAT can use"],
+    ["Load", "Wi-Fi/DSRC: share of time the channel is busy. 5G: share of the cell's uplink resources in use"],
+    ["Capacity", "link rate × the free share"], ["Latency", "estimated delay to get one packet out, longer when busy"]] : [
+    ["Usable", `measured in the last ${sm.measurementMaxAge || "0.5s"}, signal above the RAT's minimum, linked (Wi-Fi/DSRC: associated with an AP/RSU; 5G: attached to a cell)` +
+               (sm.requireProbeEcho === "true" ? `, and the car's probes over it echoed within ${sm.probeMaxAge || "0.5s"}` : "")],
+    ["Signal", "estimated uplink SINR, as dB above the lowest SINR the RAT can use"],
+    ["Load", "Wi-Fi/DSRC: share of time the channel is busy, as the car's radio senses it. 5G: none (a car cannot see how busy its cell is)"],
+    ["Link rate", "Wi-Fi/DSRC: the rate data frames are sent at. 5G: from the measured SINR and the cell's bandwidth"],
+    ["Probe round trip", "mean round trip of the small probes the car sends over every linked RAT and the server echoes, over the last second"]]));
+  g.append(treeCard, set);
+  sec.append(g);
+  sec.append(renderTurns(r, P));
+  return sec;
+}
+
+function renderTurns(r, P) {
+  const H = heavy(r), D = r.decisions;
+  const card = el("div", { class: "card", style: "margin-top:12px" }, el("h3", { text: "Decisions, turn by turn" }));
+  if (!H || !H.table) { card.append(el("p", { class: "muted", text: "Not recorded for this run (it predates the decision log). Rerun it to see every decision." })); return card; }
+  const rats = D.rats;
+  const carSel = el("select", { "aria-label": "Car" }, el("option", { value: "", text: "All cars" }), ...D.cars.map(c => el("option", { value: c, text: `Car ${c}` })));
+  const onlyBox = el("input", { type: "checkbox", id: "only" }); onlyBox.checked = true;
+  const info = el("span", { class: "muted" });
+  card.append(el("div", { class: "tbar" }, carSel, el("label", {}, onlyBox, " Only turns where something happened"), info));
+  card.append(el("p", { class: "note", style: "margin:0 0 8px", text:
+    `Each RAT column shows what this policy compares${P.key === "all" ? (D.inputs === "capacity" ? " (signal · load · free capacity)" : " (signal · load · link rate)") : ""}. Grey = measured but not usable; – = nothing measured. Click a row for every input.` + (D.table_sampled ? " Long run: quiet turns are thinned out." : "") }));
+  const t = el("table", { id: "turns" });
+  t.append(el("thead", {}, el("tr", {}, el("th", { class: "n", text: "Time" }), el("th", { text: "Car" }), el("th", { text: "On" }),
+    ...rats.map(k => el("th", {}, ratName(k))), el("th", { text: "Picked" }), el("th", { text: "Why" }))));
+  const body = el("tbody");
+  t.append(body);
+  card.append(el("div", { class: "scroll", style: "max-height:560px;overflow-y:auto" }, t));
+  const more = el("button", { type: "button", text: "Show more", style: "margin-top:8px" });
+  card.append(more);
+
+  const val = (c) => {
+    const [ok, sinr, load, cap, lat] = c;
+    const s = v => v == null ? "–" : (v > 0 ? "+" : "") + fmt(v, 1) + " dB";
+    switch (P.key) {
+      case "sinr": return s(sinr);
+      case "load": return load == null ? "–" : pct(load, 0) + " busy";
+      case "cap": return cap == null ? "–" : `${fmt(cap, 1)} Mb/s · ${fmt(lat, 1)} ms`;
+      case "rate": return cap == null ? "–" : `${fmt(cap, 1)} Mb/s · ${lat == null ? "no echo" : fmt(lat, 1) + " ms RTT"}`;
+      case "ok": return ok ? "usable" : sinr == null ? "–" : "not usable";
+      default: return sinr == null ? "–" : [s(sinr), load == null ? null : pct(load, 0), cap == null ? null : fmt(cap, 0) + " Mb/s"].filter(Boolean).join(" · ");
+    }
+  };
+  let rows = [], shown = 0;
+  const PAGE = 100;
+  const draw = (reset) => {
+    if (reset) { body.replaceChildren(); shown = 0; }
+    for (const row of rows.slice(shown, shown + PAGE)) {
+      const [tt, car, cur, choice, br, detail, cells] = row;
+      const tr = el("tr", { class: "row" + (choice && choice !== cur ? " changed" : "") },
+        el("td", { class: "n", text: fmt(tt, 1) }), el("td", { text: car }), el("td", {}, cur ? ratName(cur) : "–"),
+        ...cells.map(c => el("td", { class: "rat" + (c[0] ? "" : " off") }, val(c), c[0] && c[5] ? el("small", { text: c[5] }) : null)),
+        el("td", { class: "pick" }, choice ? ratName(choice) : "–"),
+        el("td", { class: "why-" + br, text: (WHY[br] || (() => br))(detail) }));
+      tr.addEventListener("click", () => {
+        const nx = tr.nextElementSibling;
+        if (nx && nx.classList.contains("more")) { nx.remove(); return; }
+        const rated = D.inputs !== "capacity";
+        const sub = simpleTable(["RAT", "Usable", "Signal (dB above min)", "Load", rated ? "Link rate" : "Free capacity", rated ? "Probe round trip" : "Latency", "Served by"],
+          cells.map((c, i) => [RAT_LABEL[rats[i]], c[0] ? "yes" : "no", c[1] == null ? "–" : fmt(c[1], 1), c[2] == null ? "–" : pct(c[2], 1),
+                               c[3] == null ? "–" : fmt(c[3], 2) + " Mbit/s", c[4] == null ? "–" : fmt(c[4], 2) + " ms", c[5] || "–"]), [2, 3, 4, 5]);
+        tr.after(el("tr", { class: "more" }, el("td", { colspan: 5 + rats.length }, sub)));
+      });
+      body.append(tr);
+    }
+    shown = Math.min(rows.length, shown + PAGE);
+    info.textContent = `${fmt(shown, 0)} of ${fmt(rows.length, 0)} turns`;
+    more.hidden = shown >= rows.length;
+  };
+  const filter = () => {
+    const car = carSel.value, only = onlyBox.checked;
+    rows = H.table.filter(x => (car === "" || String(x[1]) === car) && (!only || x[4] !== "best"));
+    if (car === "") rows = rows.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    draw(true);
+  };
+  carSel.addEventListener("change", filter); onlyBox.addEventListener("change", filter); more.addEventListener("click", () => draw(false));
+  filter();
+  return card;
+}
+
+// ------------------------------------------------------------------ network
+function renderNetworkSection(r) {
+  const sec = section("s-network", "Network", "How each radio is set up in this run, and what cars measured on it.");
+  const g = el("div", { class: "grid3" });
+  for (const c of r.network_info || []) {
+    const card = el("div", { class: "card" }, el("h3", {}, ratDot(c.rat), c.title), kvList(c.rows));
+    if (c.note) card.append(el("p", { class: "note", text: c.note }));
+    g.append(card);
+  }
+  if (!(r.network_info || []).length) g.append(el("div", { class: "card muted", text: "No radio parameters recorded for this run." }));
+  sec.append(g);
+  return sec;
+}
+
+// ------------------------------------------------------------------ results
+function stat(v, lbl, detail, unit) {
+  return el("div", { class: "stat" }, el("div", { class: "v", text: v }, unit && v !== "–" ? el("small", { text: unit }) : null),
+            el("div", { class: "l", text: lbl }), detail ? el("div", { class: "d", text: detail }) : null);
+}
+
+function niceMax(v) {
+  if (!(v > 0)) return 1;
+  const p = Math.pow(10, Math.floor(Math.log10(v))), m = v / p;
+  return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 2.5 ? 2.5 : m <= 5 ? 5 : 10) * p;
+}
+
+// Line (or column) chart over a shared time axis, with crosshair + one tooltip for every series.
+function chart({ title, unit, t, series, bars = false, digits = 1, empty = "No samples recorded for this run" }) {
+  const card = el("div", { class: "card chart" });
+  card.append(el("h3", { text: title }));
+  const live = series.filter(s => s.values.some(v => v != null && v !== 0));
+  if (series.length > 1) {
+    const lg = el("div", { class: "legend" });
+    for (const s of series) lg.append(el("span", {}, el("span", { class: "key" + (bars ? " box" : ""), style: `background:var(${s.color})` }), s.name));
+    card.append(lg);
+  }
+  if (!t.length || !live.length) { card.append(el("div", { class: "empty", text: empty })); return card; }
+  const avail = document.getElementById("run").clientWidth || 560;
+  const W = Math.max(280, Math.min(560, avail >= 1000 ? (avail - 12) / 2 - 34 : avail - 34)), H = 220, m = { l: 44, r: 10, t: 8, b: 24 };
+  const iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const tMax = t[t.length - 1], bin = t.length > 1 ? t[1] - t[0] : t[0];
+  let yMax = niceMax(Math.max(...series.flatMap(s => s.values.filter(v => v != null))));
+  if (digits === 0) yMax = Math.max(4, Math.ceil(yMax / 4) * 4);
+  const x = v => m.l + (v / tMax) * iw, y = v => m.t + ih - (v / yMax) * ih;
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": title });
+  const ax = svgEl("g", { class: "axis" });
+  for (let i = 0; i <= 4; i++) {
+    const v = yMax * i / 4;
+    ax.append(svgEl("line", { class: i ? "gridline" : "baseline", x1: m.l, x2: W - m.r, y1: y(v), y2: y(v) }));
+    const tx = svgEl("text", { x: m.l - 6, y: y(v) + 4, "text-anchor": "end" }); tx.textContent = fmt(v, 2); ax.append(tx);
+  }
+  for (let i = 0; i <= 5; i++) {
+    const v = tMax * i / 5, tx = svgEl("text", { x: x(v), y: H - 6, "text-anchor": i === 0 ? "start" : i === 5 ? "end" : "middle" });
+    tx.textContent = fmt(v, 0) + " s"; ax.append(tx);
+  }
+  svg.append(ax);
+  if (bars) {
+    const s = series[0], bw = Math.max(1, iw / t.length - 2);
+    s.values.forEach((v, i) => {
+      if (!v) return;
+      const h = Math.max(1, ih - (y(v) - m.t)), x0 = x(t[i] - bin) + 1;
+      svg.append(svgEl("rect", { x: x0, y: y(v), width: bw, height: h, rx: Math.min(2, bw / 2), fill: `var(${s.color})` }));
+    });
+  } else {
+    for (const s of series) {
+      let d = "", pen = false;
+      s.values.forEach((v, i) => {
+        if (v == null) { pen = false; return; }
+        d += (pen ? "L" : "M") + x(t[i]).toFixed(1) + "," + y(v).toFixed(1); pen = true;
+      });
+      svg.append(svgEl("path", { d, fill: "none", stroke: `var(${s.color})`, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round", "vector-effect": "non-scaling-stroke" }));
+    }
+  }
+  const hair = svgEl("line", { class: "hair", y1: m.t, y2: m.t + ih, visibility: "hidden", "vector-effect": "non-scaling-stroke" });
+  svg.append(hair);
+  card.append(svg);
+  const tip = el("div", { class: "tip", hidden: "" });
+  card.append(tip);
+  const show = i => {
+    const xx = x(t[i]);
+    hair.setAttribute("x1", xx); hair.setAttribute("x2", xx); hair.setAttribute("visibility", "visible");
+    tip.replaceChildren(el("div", { class: "ts", text: `t = ${fmt(t[i] - bin, 1)}–${fmt(t[i], 1)} s` }));
+    for (const s of series) tip.append(el("div", { class: "row" }, el("span", { class: "key", style: `background:var(${s.color})` }),
+      el("b", { text: s.values[i] == null ? "–" : fmt(s.values[i], digits) + (unit ? " " + unit : "") }), series.length > 1 ? el("span", { class: "muted", text: s.name }) : null));
+    tip.hidden = false;
+    const rr = svg.getBoundingClientRect(), px = (xx / W) * rr.width;
+    tip.style.top = (svg.offsetTop + 8) + "px";
+    tip.style.left = Math.min(Math.max(0, px + 12), rr.width - tip.offsetWidth) + "px";
+  };
+  svg.addEventListener("pointermove", ev => {
+    const rr = svg.getBoundingClientRect(), vx = (ev.clientX - rr.left) / rr.width * W;
+    show(Math.min(t.length - 1, Math.max(0, Math.round(((vx - m.l) / iw) * tMax / bin - 1))));
+  });
+  svg.addEventListener("pointerleave", () => { hair.setAttribute("visibility", "hidden"); tip.hidden = true; });
+  const det = el("details", {}, el("summary", { text: "Data table" }));
+  const tb = el("table");
+  tb.append(el("thead", {}, el("tr", {}, el("th", { class: "n", text: "t (s)" }), ...series.map(s => el("th", { class: "n", text: s.name + (unit ? ` (${unit})` : "") })))));
+  const body = el("tbody");
+  t.forEach((tt, i) => body.append(el("tr", {}, el("td", { class: "n", text: fmt(tt, 1) }), ...series.map(s => el("td", { class: "n", text: fmt(s.values[i], digits) })))));
+  tb.append(body);
+  det.append(el("div", { class: "scroll", style: "max-height:260px" }, tb));
+  card.append(det);
+  return card;
+}
+
+function renderResultsSection(r) {
+  const s = r.summary, u = r.setup || {};
+  const sec = section("s-results", "Results", "How well the traffic got through over the whole run.");
+  if (!s) { sec.append(el("div", { class: "card empty", text: "This run produced no result files. See the console output under Run." })); return sec; }
+  const g = el("div", { class: "grid3" });
+  const classes = s.classes || [];
+  for (const c of classes) {
+    const tr = (u.traffic || []).find(x => x.name === c.name);
+    const card = el("div", { class: "card" }, el("h3", { text: className(c.name) }));
+    if (tr || c.direction) card.append(el("p", { class: "note", style: "margin:-4px 0 10px", text: [tr ? `${tr.packet} every ${tr.interval}` + (tr.mode === "onoff" ? " in bursts" : "") : null,
+      c.direction === "server to car" ? `judged at the car, on the server's replies, ${fmt(c.deadline_ms, 0)} ms from the request` : c.deadline_ms ? `judged at the server, ${fmt(c.deadline_ms, 0)} ms deadline` : null].filter(Boolean).join(" · ") }));
+    const st = el("div", { class: "stats" });
+    if (c.within_deadline != null) st.append(stat(pct(c.within_deadline), "arrived on time", `within ${fmt(c.deadline_ms, 0)} ms`));
+    st.append(stat(pct(c.pdr), "delivered", `${fmt(c.received, 0)} of ${fmt(c.sent, 0)} packets`));
+    st.append(stat(fmt(c.delay_mean_ms, 1), "average delay", c.delay_max_ms != null ? `worst ${fmt(c.delay_max_ms, 0)} ms` : null, "ms"));
+    if (c.within_deadline == null) st.append(stat(fmt(c.throughput_mbps, 2), "received", "all cars together", "Mbit/s"));
+    card.append(st);
+    g.append(card);
+  }
+  if (!classes.length) g.append(el("div", { class: "card" }, el("h3", { text: "Traffic" }), el("div", { class: "stats" },
+    stat(pct(s.pdr), "delivered", `${fmt(s.received, 0)} of ${fmt(s.sent, 0)} packets`), stat(fmt(s.delay_mean_ms, 1), "average delay", null, "ms"))));
+
+  const sw = el("div", { class: "card" }, el("h3", { text: "Switching between RATs" }));
+  const sst = el("div", { class: "stats" }, stat(fmt(s.handovers_per_vehicle, 1), "switches per car", `${fmt(s.handovers, 0)} in total`));
+  if (s.interruption_count) sst.append(stat(fmt(s.interruption_mean_ms, 0), "gap per switch", `time until the first packet arrives over the new RAT; worst ${fmt(s.interruption_max_ms, 0)} ms`, "ms"),
+                                       stat(fmt(s.interruption_lost, 0), "packets lost while switching", null));
+  if (s.handovers_failed) sst.append(stat(fmt(s.handovers_failed, 0), "switches that failed", "the target stopped working first"));
+  sw.append(sst);
+  g.append(sw);
+
+  const cn = el("div", { class: "card" }, el("h3", { text: "Which RAT cars were on" }));
+  const bar = el("div", { class: "sharebar", role: "img", "aria-label": "Share of time on each RAT" });
+  const lg = el("div", { class: "legend" });
+  for (const [k, v] of Object.entries(s.shares)) {
+    if (!v) continue;
+    bar.append(el("span", { style: `width:${v * 100}%;background:var(${RAT_COLOR[k] || "--s5"})`, title: `${RAT_LABEL[k] || k} ${pct(v)}` }));
+    lg.append(el("span", {}, el("span", { class: "key box", style: `background:var(${RAT_COLOR[k] || "--s5"})` }), `${RAT_LABEL[k] || k} ${pct(v, 0)}`));
+  }
+  cn.append(bar, lg, el("div", { class: "stats", style: "margin-top:8px" },
+    stat(pct(s.connectivity), "of the time a car had a usable RAT", `${fmt(s.outage_s, 1)} s without one, all cars together`)));
+  if (r.cellular_merged) cn.append(el("p", { class: "note", text: "LTE and 5G share one IP interface in this run, so they are counted together as Cellular." }));
+  g.append(cn);
+  sec.append(g);
+
+  if (r.series) {
+    const S = r.series, t = S.t;
+    sec.append(el("p", { class: "sub", style: "margin-top:16px", text: `Over time. Each point is the average over ${fmt(S.bin_s, 1)} s of simulated time.` }));
+    const c = el("div", { class: "grid2" });
+    c.append(chart({ title: "Cars on each RAT", unit: "", t, digits: 0,
+                     series: Object.entries(S.rat).map(([k, v]) => ({ name: RAT_LABEL[k] || k, color: RAT_COLOR[k] || "--s5", values: v })) }));
+    c.append(chart({ title: "Data sent and received, Mbit/s", unit: "Mbit/s", t, digits: 3,
+                     series: [{ name: "Sent by cars", color: "--s1", values: S.offered_mbps }, { name: "Received by server", color: "--s2", values: S.delivered_mbps }] }));
+    const dl = Array.isArray(S.delay_ms) ? { Delay: S.delay_ms } : S.delay_ms;
+    c.append(chart({ title: "Average delay, ms", unit: "ms", t, digits: 1,
+                     series: Object.entries(dl).map(([k, v], i) => ({ name: className(k), color: `--s${i + 1}`, values: v })) }));
+    c.append(chart({ title: S.bin_s === 1 ? "RAT switches per second, all cars" : `RAT switches per ${fmt(S.bin_s, 1)} s, all cars`, unit: "", t, digits: 0, bars: true,
+                     series: [{ name: "Switches", color: "--s1", values: S.handovers }], empty: "No switches in this run" }));
+    sec.append(c);
+  }
+  return sec;
+}
+
+// ------------------------------------------------------------------ page
+function renderRun(r) {
+  const root = document.getElementById("run");
+  root.replaceChildren();
+  const st = document.getElementById("status");
+  st.className = "pill " + (r.status === "ok" ? "st-ok" : r.status === "failed" ? "st-failed" : "st-none");
+  st.textContent = r.status === "ok" ? "completed" : r.status;
+  document.querySelectorAll("#history tbody tr").forEach(tr => tr.classList.toggle("sel", tr.dataset.id === r.id));
+  const d = (r.setup && r.setup.decision) || {};
+  const radios = ((r.setup && r.setup.rats) || []).map(x => RAT_LABEL[x.rat] || x.rat);
+  root.append(el("p", { class: "intro", text: `Cars drive on the road with ${radios.length ? radios.length + " radios each: " + radios.join(", ") : "several radios each"} (each one a RAT, radio access technology). ` +
+    `Every ${d.decisionInterval || "0.5s"}, the ${d.policy || "selection"} policy picks which RAT carries the car's traffic to a server on the internet. ` +
+    `This page shows one run: how it was set up, where each radio worked, what every car chose and why, and how well the traffic got through.` }));
+  if (!r.setup) {
+    root.append(el("div", { class: "card empty", style: "margin-top:16px", text: "This run produced no result files." }));
+    if (r.log) root.append(el("pre", { class: "log", text: r.log }));
+    return;
+  }
+  root.append(renderRunMeta(r));
+  const map = renderMapSection(r);
+  root.append(map.sec);
+  root.append(renderPolicySection(r), renderNetworkSection(r), renderResultsSection(r));
+  map.init();
+}
+
+function renderHistory() {
+  const tb = document.getElementById("history");
+  const cls = (r, name, key) => { const c = r.summary && (r.summary.classes || []).find(x => x.name === name); return c && c[key] != null ? pct(c[key]) : "–"; };
+  const cols = [["Started", r => when(r.started)], ["Scenario", r => (r.meta && r.meta.scenario) || r.config || "–"],
+    ["Policy", r => (r.setup && r.setup.decision && r.setup.decision.policy) || (r.meta && r.meta.policy) || "–"],
+    ["Seed", r => (r.seed && r.seed.seedset) || (r.meta && r.meta.seed) || "0", 1], ["Label", r => (r.meta && r.meta.name) || ""],
+    ["Status", r => r.status === "ok" ? "completed" : r.status],
+    ["Safety on time", r => cls(r, "safety", "within_deadline"), 1], ["Infotainment delivered", r => cls(r, "infotainment", "pdr"), 1],
+    ["Switches per car", r => r.summary ? fmt(r.summary.handovers_per_vehicle, 1) : "–", 1],
+    ["Simulated", r => r.sim_time != null ? fmt(r.sim_time, 0) + " s" : "–", 1]];
+  tb.append(el("thead", {}, el("tr", {}, ...cols.map(([h, , n]) => el("th", { class: n ? "n" : null, text: h })))));
+  const body = el("tbody");
+  for (const r of RUNS) {
+    const tr = el("tr", { tabindex: "0" }, ...cols.map(([h, f, n]) => {
+      const td = el("td", { class: n ? "n" : null, text: f(r) });
+      if (h === "Status") td.className = r.status === "ok" ? "st-ok" : r.status === "failed" ? "st-failed" : "st-none";
+      return td;
+    }));
+    tr.dataset.id = r.id;
+    const go = () => { pick.value = r.id; history.replaceState(null, "", "#" + r.id); showRun(r); window.scrollTo({ top: 0, behavior: "smooth" }); };
+    tr.addEventListener("click", go);
+    tr.addEventListener("keydown", e => { if (e.key === "Enter") go(); });
+    body.append(tr);
+  }
+  tb.append(body);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Compare policies: runs of the same scenario, length, image and parameters, one row per policy,
+// averaged over seeds.
+const POLICY_ORDER = ["coverage_priority", "sinr", "latency_qos", "load", "ensemble", "ml", "example_split",
+                      "only_dsrc", "only_wifi", "only_nr"];
+const POLICY_LABEL = { coverage_priority: "CoveragePriority", sinr: "Sinr", latency_qos: "LatencyQos", load: "Load",
+  ensemble: "Ensemble", ml: "Ml", example_split: "ExampleSplit", only_dsrc: "only DSRC", only_wifi: "only WiFi", only_nr: "only 5G" };
+const isBaseline = p => p.startsWith("only_");
+const policyLabel = p => POLICY_LABEL[p] || p;
+// [key, title, kind, better]  kind: pct | ms | num
+const CMP_METRICS = [
+  ["safety_pdr", "Safety delivered", "pct", "high"],
+  ["safety_on_time", "Safety on time (100 ms)", "pct", "high"],
+  ["info_pdr", "Infotainment delivered", "pct", "high"],
+  ["info_on_time", "Infotainment on time (1 s)", "pct", "high"],
+  ["safety_delay", "Safety delay", "ms", "low"],
+  ["info_delay", "Infotainment delay", "ms", "low"],
+  ["ho", "Handovers per car", "num", "low"],
+  ["pingpong", "Ping-pongs (all cars)", "num", "low"],
+  ["gap", "Switch gap", "ms", "low"],
+];
+// the test bench page shows these too
+const BENCH_METRICS = {
+  traffic: ["safety_pdr", "safety_on_time", "info_pdr", "info_on_time", "safety_delay", "info_delay", "safety_delay_max", "info_delay_max"],
+  coverage: ["conn", "outage"],
+  switching: ["ho", "pingpong", "gap", "gap_max", "lost", "failed"],
+};
+const EXTRA_METRICS = [
+  ["safety_delay_max", "Safety worst delay", "ms", "low"],
+  ["info_delay_max", "Infotainment worst delay", "ms", "low"],
+  ["conn", "Time with a usable RAT", "pct", "high"],
+  ["outage", "Time without a usable RAT, per car", "s", "low"],
+  ["gap_max", "Worst switch gap", "ms", "low"],
+  ["lost", "Packets lost while switching (all cars)", "num", "low"],
+  ["failed", "Switches that failed (all cars)", "num", "low"],
+];
+const METRIC = Object.fromEntries(CMP_METRICS.concat(EXTRA_METRICS).map(m => [m[0], m]));
+
+function runMetrics(r) {
+  const s = r.summary, out = {};
+  for (const c of s.classes || []) {
+    const k = c.name === "safety" ? "safety" : c.name === "infotainment" ? "info" : null;
+    if (!k) continue;
+    out[k + "_pdr"] = c.pdr; out[k + "_on_time"] = c.within_deadline; out[k + "_delay"] = c.delay_mean_ms;
+    out[k + "_delay_max"] = c.delay_max_ms;
+  }
+  out.ho = s.handovers_per_vehicle; out.pingpong = s.ping_pong; out.gap = s.interruption_mean_ms;
+  out.conn = s.connectivity; out.outage = s.vehicles ? s.outage_s / s.vehicles : null;
+  out.gap_max = s.interruption_max_ms; out.lost = s.interruption_lost; out.failed = s.handovers_failed;
+  const D = r.decisions;
+  if (D && D.count) for (const [b, n] of Object.entries(D.branches || {})) out["br_" + (b || "other")] = n / D.count;
+  for (const [k, v] of Object.entries(s.shares || {})) out["share_" + k] = v;
+  return out;
+}
+
+function stats(vals) {
+  vals = vals.filter(v => v != null && isFinite(v));
+  if (!vals.length) return null;
+  const m = vals.reduce((a, b) => a + b, 0) / vals.length;
+  const sd = vals.length > 1 ? Math.sqrt(vals.reduce((a, b) => a + (b - m) ** 2, 0) / (vals.length - 1)) : 0;
+  return { m, sd, n: vals.length };
+}
+
+function comparisonGroups() {
+  const groups = new Map();
+  for (const r of RUNS) {
+    const m = r.meta || {};
+    if (r.status !== "ok" || !m.scenario || !m.policy || !r.summary) continue;
+    const params = (m.params || []).filter(p => !p.includes("vector-recording")).sort();
+    const key = [m.scenario, r.sim_time, m.repo_commit || "", params.join(" ")].join("|");
+    if (!groups.has(key)) groups.set(key, { key, scenario: m.scenario, simTime: r.sim_time, commit: m.repo_commit || "",
+                                             params, runs: [], latest: "" });
+    const g = groups.get(key);
+    g.runs.push(r);
+    if ((r.started || "") > g.latest) g.latest = r.started || "";
+  }
+  const out = [];
+  for (const g of groups.values()) {
+    const by = {};
+    for (const r of g.runs) (by[r.meta.policy] = by[r.meta.policy] || []).push(r);
+    g.policies = Object.keys(by).sort((a, b) => {
+      const ia = POLICY_ORDER.indexOf(a), ib = POLICY_ORDER.indexOf(b);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);
+    }).map(p => {
+      const ms = by[p].map(runMetrics), row = { policy: p, runs: by[p], seeds: by[p].map(r => r.meta.seed || "0").sort() };
+      const keys = new Set(ms.flatMap(Object.keys));
+      for (const k of keys) row[k] = stats(ms.map(x => x[k]));
+      return row;
+    });
+    if (g.policies.length >= 2) out.push(g);
+  }
+  return out.sort((a, b) => b.latest.localeCompare(a.latest));
+}
+
+const cmpFmt = (v, kind) => v == null ? "–" : kind === "pct" ? (v * 100).toFixed(1) + "%" : kind === "ms" ? fmt(v, 1) + " ms" : kind === "s" ? fmt(v, 1) + " s" : fmt(v, 2);
+
+// Horizontal bars, one per policy, with a whisker for the spread across seeds. Policies in the accent
+// colour, baselines in neutral grey; a dashed line separates the two.
+function hbarChart(title, better, rows, key, kind) {
+  const card = el("div", { class: "card chart hbar" });
+  card.append(el("h3", {}, title, el("span", { class: "muted", style: "font-weight:400", text: better === "high" ? "  · higher is better" : "  · lower is better" })));
+  const lg = el("div", { class: "legend" });
+  lg.append(el("span", {}, el("span", { class: "key box", style: "background:var(--s1)" }), "policy"),
+            el("span", {}, el("span", { class: "key box", style: "background:var(--text-muted)" }), "baseline (one RAT)"),
+            el("span", {}, el("span", { class: "key", style: "background:var(--text-primary);height:1.5px" }), "± spread across seeds"));
+  card.append(lg);
+  const data = rows.map(r => ({ r, s: r[key] })).filter(d => d.s);
+  if (!data.length) { card.append(el("div", { class: "empty", text: "Not recorded in these runs" })); return card; }
+  const avail = document.getElementById("s-compare").clientWidth || 560;
+  const W = Math.max(300, Math.min(560, avail >= 1066 ? (avail - 12) / 2 - 34 : avail - 34));
+  const rowH = 26, m = { l: 118, r: 70, t: 4, b: 22 }, H = m.t + m.b + rowH * rows.length;
+  const iw = W - m.l - m.r;
+  const xMax = kind === "pct" ? 1 : niceMax(Math.max(...data.map(d => d.s.m + d.s.sd)));
+  const x = v => m.l + Math.max(0, v) / xMax * iw;
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": title });
+  const ax = svgEl("g", { class: "axis" });
+  for (let i = 0; i <= 4; i++) {
+    const v = xMax * i / 4;
+    ax.append(svgEl("line", { class: i ? "gridline" : "baseline", x1: x(v), x2: x(v), y1: m.t, y2: H - m.b }));
+    const tx = svgEl("text", { x: x(v), y: H - 6, "text-anchor": i === 0 ? "start" : i === 4 ? "end" : "middle" });
+    tx.textContent = kind === "pct" ? (v * 100).toFixed(0) + "%" : fmt(v, 2); ax.append(tx);
+  }
+  svg.append(ax);
+  const tip = el("div", { class: "tip", hidden: "" });
+  rows.forEach((row, i) => {
+    const y0 = m.t + i * rowH, cy = y0 + rowH / 2, s = row[key], base = isBaseline(row.policy);
+    if (i > 0 && base && !isBaseline(rows[i - 1].policy))
+      svg.append(svgEl("line", { class: "sep", x1: 0, x2: W, y1: y0, y2: y0 }));
+    const lab = svgEl("text", { class: "lab", x: m.l - 8, y: cy + 4, "text-anchor": "end" });
+    lab.textContent = policyLabel(row.policy); svg.append(lab);
+    if (!s) return;
+    const bh = 14, x1 = x(s.m);
+    // 4px rounded data end, square at the baseline
+    const w = Math.max(1, x1 - m.l), rr = Math.min(4, w);
+    svg.append(svgEl("path", { d: `M${m.l},${cy - bh / 2}h${w - rr}a${rr},${rr} 0 0 1 ${rr},${rr}v${bh - 2 * rr}a${rr},${rr} 0 0 1 ${-rr},${rr}h${-(w - rr)}z`,
+                               fill: base ? "var(--text-muted)" : "var(--s1)" }));
+    if (s.sd > 0) {
+      const a = x(s.m - s.sd), b = x(Math.min(kind === "pct" ? 1 : Infinity, s.m + s.sd));
+      svg.append(svgEl("line", { class: "whisk", x1: a, x2: b, y1: cy, y2: cy }),
+                 svgEl("line", { class: "whisk", x1: a, x2: a, y1: cy - 4, y2: cy + 4 }),
+                 svgEl("line", { class: "whisk", x1: b, x2: b, y1: cy - 4, y2: cy + 4 }));
+    }
+    const val = svgEl("text", { class: "val", x: Math.max(x1, x(s.m + s.sd)) + 6, y: cy + 4 });
+    val.textContent = cmpFmt(s.m, kind); svg.append(val);
+    const hit = svgEl("rect", { class: "hit", x: 0, y: y0, width: W, height: rowH });
+    hit.addEventListener("pointerenter", () => {
+      tip.replaceChildren(el("div", { class: "ts", text: policyLabel(row.policy) + (base ? " (baseline)" : "") }),
+        el("div", { class: "row" }, el("b", { text: cmpFmt(s.m, kind) }), el("span", { class: "muted", text: `mean of ${s.n} seed${s.n > 1 ? "s" : ""}` })),
+        s.n > 1 ? el("div", { class: "row" }, el("span", { class: "muted", text: `± ${kind === "pct" ? (s.sd * 100).toFixed(1) + " points" : fmt(s.sd, 2)} across seeds` })) : null);
+      tip.hidden = false;
+      const r = svg.getBoundingClientRect();
+      tip.style.top = (svg.offsetTop + (cy + rowH / 2) / H * r.height + 4) + "px";
+      tip.style.left = Math.min(r.width - tip.offsetWidth, Math.max(0, x1 / W * r.width - tip.offsetWidth / 2)) + "px";
+    });
+    hit.addEventListener("pointerleave", () => { tip.hidden = true; });
+    svg.append(hit);
+  });
+  card.append(svg, tip);
+  return card;
+}
+
+// 100% stacked bar per policy: share of attached time on each RAT. 2px surface gap between segments.
+function shareChart(rows) {
+  const rats = ["DSRC", "WiFi", "NR", "Cellular", "LTE"].filter(k => rows.some(r => r["share_" + k] && r["share_" + k].m > 0));
+  const card = el("div", { class: "card chart hbar" });
+  card.append(el("h3", { text: "Time on each RAT (share of the time a car was attached, mean over cars and seeds)" }));
+  const lg = el("div", { class: "legend" });
+  for (const k of rats) lg.append(el("span", {}, el("span", { class: "key box", style: `background:var(${RAT_COLOR[k]})` }), k === "NR" ? "5G-NR" : k));
+  card.append(lg);
+  const avail = document.getElementById("s-compare").clientWidth || 560;
+  const W = Math.max(300, Math.min(1100, avail - 34)), rowH = 26, m = { l: 118, r: 10, t: 4, b: 22 };
+  const H = m.t + m.b + rowH * rows.length, iw = W - m.l - m.r;
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Time on each RAT per policy" });
+  const ax = svgEl("g", { class: "axis" });
+  for (let i = 0; i <= 4; i++) {
+    const tx = svgEl("text", { x: m.l + iw * i / 4, y: H - 6, "text-anchor": i === 0 ? "start" : i === 4 ? "end" : "middle" });
+    tx.textContent = (25 * i) + "%"; ax.append(tx);
+  }
+  svg.append(ax);
+  const tip = el("div", { class: "tip", hidden: "" });
+  rows.forEach((row, i) => {
+    const y0 = m.t + i * rowH, cy = y0 + rowH / 2, bh = 14;
+    if (i > 0 && isBaseline(row.policy) && !isBaseline(rows[i - 1].policy))
+      svg.append(svgEl("line", { class: "sep", x1: 0, x2: W, y1: y0, y2: y0 }));
+    const lab = svgEl("text", { class: "lab", x: m.l - 8, y: cy + 4, "text-anchor": "end" });
+    lab.textContent = policyLabel(row.policy); svg.append(lab);
+    const parts = rats.map(k => [k, row["share_" + k] ? row["share_" + k].m : 0]);
+    const tot = parts.reduce((a, [, v]) => a + v, 0) || 1;
+    let xx = m.l;
+    for (const [k, v] of parts) {
+      const w = v / tot * iw;
+      if (w > 2) svg.append(svgEl("rect", { x: xx + 1, y: cy - bh / 2, width: w - 2, height: bh, rx: 2, fill: `var(${RAT_COLOR[k]})` }));
+      xx += w;
+    }
+    const hit = svgEl("rect", { class: "hit", x: 0, y: y0, width: W, height: rowH });
+    hit.addEventListener("pointerenter", () => {
+      tip.replaceChildren(el("div", { class: "ts", text: policyLabel(row.policy) }),
+        ...parts.map(([k, v]) => el("div", { class: "row" }, el("span", { class: "key box", style: `background:var(${RAT_COLOR[k]})` }),
+                                    el("b", { text: (v * 100).toFixed(1) + "%" }), el("span", { class: "muted", text: k }))));
+      tip.hidden = false;
+      const r = svg.getBoundingClientRect();
+      tip.style.top = (svg.offsetTop + (cy + rowH / 2) / H * r.height + 4) + "px";
+      tip.style.left = Math.min(r.width - tip.offsetWidth, m.l / W * r.width) + "px";
+    });
+    hit.addEventListener("pointerleave", () => { tip.hidden = true; });
+    svg.append(hit);
+  });
+  card.append(svg, tip);
+  return card;
+}
+
+function comparisonTable(rows, clickable = true) {
+  const t = el("table", { id: "cmp-table" });
+  const cols = CMP_METRICS.concat([["share_DSRC", "On DSRC", "pct"], ["share_WiFi", "On WiFi", "pct"], ["share_NR", "On 5G", "pct"]]);
+  t.append(el("thead", {}, el("tr", {}, el("th", { text: "Policy" }), el("th", { class: "n", text: "Seeds" }),
+                                     ...cols.map(([, h]) => el("th", { class: "n", text: h })))));
+  // best mean per column, among the policies (not the baselines)
+  const best = {};
+  for (const [k, , , better] of cols) {
+    if (!better) continue;
+    const v = rows.filter(r => !isBaseline(r.policy) && r[k]).map(r => r[k].m);
+    if (v.length > 1) best[k] = better === "high" ? Math.max(...v) : Math.min(...v);
+  }
+  const b = el("tbody");
+  for (const r of rows) {
+    const tr = el("tr", { class: isBaseline(r.policy) ? "base" : "", tabindex: "0", title: "Open this policy's first run below" },
+      el("td", { text: policyLabel(r.policy) + (isBaseline(r.policy) ? " (baseline)" : "") }),
+      el("td", { class: "n", text: r.seeds.join(", ") }),
+      ...cols.map(([k, , kind]) => {
+        const s = r[k];
+        const td = el("td", { class: "n", text: s ? cmpFmt(s.m, kind) + (s.n > 1 ? ` ±${kind === "pct" ? (s.sd * 100).toFixed(1) : fmt(s.sd, kind === "num" ? 2 : 1)}` : "") : "–" });
+        if (s && best[k] != null && !isBaseline(r.policy) && s.m === best[k]) td.classList.add("best");
+        return td;
+      }));
+    const go = () => { const run = r.runs[0]; pick.value = run.id; history.replaceState(null, "", "#" + run.id);
+                       showRun(run).then(() => document.getElementById("s-run").scrollIntoView({ behavior: "smooth" })); };
+    if (clickable) {
+      tr.addEventListener("click", go);
+      tr.addEventListener("keydown", e => { if (e.key === "Enter") go(); });
+    } else { tr.removeAttribute("tabindex"); tr.removeAttribute("title"); tr.style.cursor = "default"; }
+    b.append(tr);
+  }
+  t.append(b);
+  return el("div", { class: "scroll" }, t);
+}
+
+// Why cars switched or stayed: per policy, the share of decisions that ended in each outcome other
+// than "already on the top pick" (from the decision logs). Fixed colour per outcome.
+const BRANCHES = [["switch", "Switched: better for long enough", "--s1"], ["lost", "Switched: its RAT stopped working", "--s2"],
+                  ["wait", "Waiting out the time-to-trigger", "--s3"], ["margin", "Stayed: top pick not better by enough", "--s4"],
+                  ["sticky", "Stayed: close enough in the vote", "--s4"]];
+function branchChart(rows) {
+  const card = el("div", { class: "card chart hbar" });
+  card.append(el("h3", { text: "Why cars switched or stayed (share of all decisions; the rest stayed on the top pick)" }));
+  const used = BRANCHES.filter(([b]) => rows.some(r => r["br_" + b] && r["br_" + b].m > 0));
+  if (!used.length) { card.append(el("div", { class: "empty", text: "No decision logs in these runs" })); return card; }
+  const lg = el("div", { class: "legend" });
+  for (const [b, name, c] of used) if (b !== "sticky" || !used.some(x => x[0] === "margin"))
+    lg.append(el("span", {}, el("span", { class: "key box", style: `background:var(${c})` }), name + (b === "margin" && used.some(x => x[0] === "sticky") ? " (Ensemble: close enough in the vote)" : "")));
+  card.append(lg);
+  const avail = document.getElementById("s-compare").clientWidth || 560;
+  const W = Math.max(300, Math.min(1100, avail - 34)), rowH = 26, m = { l: 118, r: 60, t: 4, b: 22 };
+  const H = m.t + m.b + rowH * rows.length, iw = W - m.l - m.r;
+  const tot = r => used.reduce((a, [b]) => a + (r["br_" + b] ? r["br_" + b].m : 0), 0);
+  const xMax = niceMax(Math.max(...rows.map(tot), 0.001));
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Decision outcomes per policy" });
+  const ax = svgEl("g", { class: "axis" });
+  for (let i = 0; i <= 4; i++) {
+    const v = xMax * i / 4, xx = m.l + iw * i / 4;
+    ax.append(svgEl("line", { class: i ? "gridline" : "baseline", x1: xx, x2: xx, y1: m.t, y2: H - m.b }));
+    const tx = svgEl("text", { x: xx, y: H - 6, "text-anchor": i === 0 ? "start" : i === 4 ? "end" : "middle" });
+    tx.textContent = (v * 100).toFixed(v < 0.1 ? 1 : 0) + "%"; ax.append(tx);
+  }
+  svg.append(ax);
+  const tip = el("div", { class: "tip", hidden: "" });
+  rows.forEach((row, i) => {
+    const y0 = m.t + i * rowH, cy = y0 + rowH / 2, bh = 14;
+    if (i > 0 && isBaseline(row.policy) && !isBaseline(rows[i - 1].policy))
+      svg.append(svgEl("line", { class: "sep", x1: 0, x2: W, y1: y0, y2: y0 }));
+    const lab = svgEl("text", { class: "lab", x: m.l - 8, y: cy + 4, "text-anchor": "end" });
+    lab.textContent = policyLabel(row.policy); svg.append(lab);
+    let xx = m.l;
+    const parts = used.map(([b, name, c]) => [name, c, row["br_" + b] ? row["br_" + b].m : 0]).filter(p => p[2] > 0);
+    for (const [, c, v] of parts) {
+      const w = v / xMax * iw;
+      if (w > 2) svg.append(svgEl("rect", { x: xx + 1, y: cy - bh / 2, width: w - 2, height: bh, rx: 2, fill: `var(${c})` }));
+      xx += w;
+    }
+    const val = svgEl("text", { class: "val", x: xx + 6, y: cy + 4 });
+    val.textContent = (tot(row) * 100).toFixed(1) + "%"; svg.append(val);
+    const hit = svgEl("rect", { class: "hit", x: 0, y: y0, width: W, height: rowH });
+    hit.addEventListener("pointerenter", () => {
+      tip.replaceChildren(el("div", { class: "ts", text: policyLabel(row.policy) + " · share of all decisions" }),
+        ...(parts.length ? parts.map(([name, c, v]) => el("div", { class: "row" }, el("span", { class: "key box", style: `background:var(${c})` }),
+                                       el("b", { text: (v * 100).toFixed(2) + "%" }), el("span", { class: "muted", text: name })))
+                         : [el("div", { class: "muted", text: "always on the top pick" })]));
+      tip.hidden = false;
+      const r = svg.getBoundingClientRect();
+      tip.style.top = (svg.offsetTop + (cy + rowH / 2) / H * r.height + 4) + "px";
+      tip.style.left = Math.min(r.width - tip.offsetWidth, m.l / W * r.width) + "px";
+    });
+    hit.addEventListener("pointerleave", () => { tip.hidden = true; });
+    svg.append(hit);
+  });
+  card.append(svg, tip);
+  return card;
+}
+
+// Every run of the bench, one row per (policy, seed)
+function runsTable(g) {
+  const cols = [["safety_pdr", "Safety delivered", "pct"], ["safety_on_time", "Safety on time", "pct"], ["info_pdr", "Infot. delivered", "pct"],
+                ["info_on_time", "Infot. on time", "pct"], ["ho", "Handovers / car", "num"], ["pingpong", "Ping-pongs", "num"],
+                ["gap", "Switch gap", "ms"], ["conn", "Usable RAT", "pct"], ["share_DSRC", "On DSRC", "pct"], ["share_WiFi", "On WiFi", "pct"], ["share_NR", "On 5G", "pct"]];
+  const t = el("table");
+  t.append(el("thead", {}, el("tr", {}, el("th", { text: "Policy" }), el("th", { class: "n", text: "Seed" }), ...cols.map(([, h]) => el("th", { class: "n", text: h })))));
+  const b = el("tbody");
+  for (const p of g.policies)
+    for (const r of p.runs.slice().sort((a, c) => (a.meta.seed || "0").localeCompare(c.meta.seed || "0"))) {
+      const x = runMetrics(r);
+      b.append(el("tr", { class: isBaseline(p.policy) ? "base" : null }, el("td", { text: policyLabel(p.policy) }),
+        el("td", { class: "n", text: r.meta.seed || "0" }), ...cols.map(([k, , kind]) => el("td", { class: "n", text: cmpFmt(x[k], kind) }))));
+    }
+  t.append(b);
+  return el("div", { class: "scroll" }, t);
+}
+
+function renderBench(groups, g) {
+  const B = DATA.bench, root = document.getElementById("s-compare");
+  const std = B.standard;
+  root.replaceChildren(el("h2", { text: "Test bench" }));
+  const rerun = "bench/run.sh" + (std ? "" : " " + (B.extra || []).map(x => {
+    const [k, ...v] = x.split(" "); return `--${k === "set" ? "set" : k} '${v.join(" ")}'`; }).join(" "));
+  const btn = el("button", { type: "button", text: "Copy" });
+  btn.addEventListener("click", () => copyText(rerun, btn));
+  root.append(el("p", { class: "sub", text: "Every policy and the one-RAT baselines on the same scenario with the same seeds, side by side. " +
+    "Each number is the mean over the seeds; whiskers and ± are the standard deviation across seeds. A difference smaller than that is not a difference." }));
+  root.append(el("div", { class: "cmd" }, el("pre", { text: rerun, "aria-label": "Command that repeats this bench" }), btn));
+  const seeds = [...new Set(g.policies.flatMap(p => p.seeds))].sort();
+  const info = el("div", { class: "grid2" });
+  info.append(el("div", { class: "card" }, el("h3", { text: "What ran" }), kvList([
+    ["Scenario", g.scenario + (groups.length > 1 ? ` (one of ${groups.length}; pick below)` : "")],
+    ["Simulated time", `${fmt(g.simTime, 0)} s per run`], ["Seeds", seeds.join(", ")],
+    ["Policies", g.policies.filter(p => !isBaseline(p.policy)).map(p => policyLabel(p.policy)).join(", ")],
+    ["Baselines", g.policies.filter(p => isBaseline(p.policy)).map(p => policyLabel(p.policy)).join(", ") || "none"],
+    ["Settings", std ? "standard bench" : "NOT the standard bench: " + (B.extra || []).join("; ")],
+    ["Image", B.image], ["Code version", B.repo_commit], ["Started", when(B.started)], ["Runs", `${g.runs.length}` + (DATA.runs.some(r => r.status !== "ok") ? `, ${DATA.runs.filter(r => r.status !== "ok").length} failed` : ", all completed")]])));
+  info.append(el("div", { class: "card" }, el("h3", { text: "How to read it" }), kvList([
+    ["Safety", "small car-to-server messages; on time = arrived at the server within 100 ms"],
+    ["Infotainment", "requests the server answers with bigger replies; judged at the car, on time = the reply arrived within 1 s of the request"],
+    ["Handover", "the car moved its traffic to another RAT; a ping-pong is a move back within the ping-pong window"],
+    ["Switch gap", "from the first packet sent on the new RAT until the first one arrives"],
+    ["Usable RAT", "share of the time a car had at least one RAT it could use"],
+    ["Baselines", "use one RAT and nothing else: what a policy must beat"]])));
+  root.append(info);
+  if (groups.length > 1) {
+    const sel = el("select", { id: "cmp-pick" });
+    for (const x of groups) sel.append(el("option", { value: x.key, text: `${x.scenario}, ${fmt(x.simTime, 0)} s` }));
+    sel.value = g.key;
+    sel.addEventListener("change", () => renderBench(groups, groups.find(x => x.key === sel.value)));
+    root.append(el("div", { class: "filters", style: "margin-top:12px" }, el("label", { for: "cmp-pick", class: "muted", text: "Scenario" }), sel));
+  }
+  const part = (title, sub, keys) => {
+    root.append(el("h2", { text: title }));
+    if (sub) root.append(el("p", { class: "sub", text: sub }));
+    const grid = el("div", { class: "grid2" });
+    for (const k of keys) {
+      const [, t, kind, better] = METRIC[k];
+      if (g.policies.some(p => p[k])) grid.append(hbarChart(t, better, g.policies, k, kind));
+    }
+    root.append(grid);
+  };
+  part("Did the traffic get through", "Policies in blue, one-RAT baselines in grey. Hover a bar for its value and spread.", BENCH_METRICS.traffic);
+  part("Coverage", "How often cars had a RAT they could use at all.", BENCH_METRICS.coverage);
+  part("Switching", "How often cars changed RAT and what each change cost.", BENCH_METRICS.switching);
+  root.append(el("h2", { text: "How the policies chose" }));
+  root.append(shareChart(g.policies));
+  const bc = branchChart(g.policies); bc.style.marginTop = "12px"; root.append(bc);
+  root.append(el("h2", { text: "All numbers" }));
+  root.append(el("div", { class: "card" }, el("h3", { text: "Per policy: mean ± standard deviation across seeds (bold: best policy, baselines excluded)" }),
+    comparisonTable(g.policies, false)));
+  root.append(el("div", { class: "card", style: "margin-top:12px" }, el("h3", { text: "Every run" }), runsTable(g)));
+}
+
+function renderCompare(groups, g) {
+  const root = document.getElementById("s-compare");
+  root.replaceChildren(el("h2", { text: "Compare policies" }));
+  const f = el("div", { class: "filters" });
+  const sel = el("select", { id: "cmp-pick" });
+  for (const x of groups) sel.append(el("option", { value: x.key,
+    text: `${x.scenario}, ${fmt(x.simTime, 0)} s, ${x.policies.length} policies, ${x.runs.length} runs` + (x.commit ? `, commit ${x.commit.slice(0, 7)}` : "") + (x.params.length ? " (changed parameters)" : "") }));
+  sel.value = g.key;
+  sel.addEventListener("change", () => renderCompare(groups, groups.find(x => x.key === sel.value)));
+  f.append(el("label", { for: "cmp-pick", class: "muted", text: "Runs" }), sel);
+  root.append(f);
+  const seeds = [...new Set(g.policies.flatMap(p => p.seeds))].sort();
+  root.append(el("p", { class: "sub", text: `Same scenario, length, image and parameters; each policy averaged over seeds ${seeds.join(", ")} ` +
+    `(bars: mean, whisker: ± standard deviation across seeds). A difference smaller than the whiskers is not a difference.` +
+    (g.params.length ? ` Parameters changed for these runs: ${g.params.join(", ")}.` : "") }));
+  const grid = el("div", { class: "grid2" });
+  for (const [k, title, kind, better] of CMP_METRICS)
+    if (g.policies.some(p => p[k])) grid.append(hbarChart(title, better, g.policies, k, kind));
+  root.append(el("p", { class: "note", style: "margin:0 0 10px", text: "Policies in blue, one-RAT baselines in grey. Hover a bar for its value and spread." }));
+  root.append(grid);
+  const sh = shareChart(g.policies); sh.style.marginTop = "12px"; root.append(sh);
+  root.append(el("div", { class: "card", style: "margin-top:12px" },
+    el("h3", { text: "All numbers (mean ± standard deviation across seeds; bold: best policy, baselines excluded; click a row to open its first run below)" }),
+    comparisonTable(g.policies)));
+}
+
+if (DATA.bench) document.body.classList.add("bench");
+document.getElementById("gen").textContent = when(DATA.generated);
+const pick = document.getElementById("pick");
+for (const r of RUNS) pick.append(el("option", { value: r.id, text: `${when(r.started)} · ${label(r)}` }));
+pick.addEventListener("change", () => { history.replaceState(null, "", "#" + pick.value); showRun(RUNS.find(r => r.id === pick.value)); });
+const CMP_GROUPS = comparisonGroups();
+if (DATA.bench) {
+  document.querySelector("header.top h1").textContent = "MultiRATVANET test bench";
+  document.title = "MultiRATVANET test bench";
+  const sec = document.getElementById("s-compare");
+  sec.hidden = false;
+  if (CMP_GROUPS.length) renderBench(CMP_GROUPS, CMP_GROUPS[0]);
+  else sec.append(el("div", { class: "card empty", text: "No completed runs in this bench." }));
+} else renderHistory();
+if (!DATA.bench && CMP_GROUPS.length) {
+  document.getElementById("s-compare").hidden = false;
+  document.getElementById("nav-compare").hidden = false;
+  renderCompare(CMP_GROUPS, CMP_GROUPS[0]);
+}
+const linked = RUNS.find(r => "#" + r.id === decodeURIComponent(location.hash));
+if (DATA.bench) { /* the bench page shows no single run */ }
+else if (linked) { pick.value = linked.id; showRun(linked); }
+else if (RUNS.length) showRun(RUNS[0]);
+else document.getElementById("run").append(el("div", { class: "card empty", text: "No runs yet. Start one with dash/run-experiment.sh." }));
+</script>
+</body>
+</html>

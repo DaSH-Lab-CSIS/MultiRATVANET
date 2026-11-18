@@ -24,5 +24,6 @@ network ElectronicCity extends MultiRatHighway
 
     connections allowunconnected:
         upf.pppg++ <--> Eth10G <--> gNodeB3.ppp;
-        gNodeB3.x2++ <--> Eth10G <--> gNodeB2.x2++;
+        gNodeB3.x2++ <--> Eth10G <--> gNodeB2.x2++;   // gNodeB3%x2ppp0 <-> gNodeB2%x2ppp1
+        gNodeB1.x2++ <--> Eth10G <--> gNodeB3.x2++;   // gNodeB1%x2ppp1 <-> gNodeB3%x2ppp1
 }

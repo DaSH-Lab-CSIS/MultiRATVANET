@@ -50,7 +50,37 @@ class EnsemblePolicy : public TimeToTriggerPolicy {
     void setStickiness(double s) { stickiness_ = s; }
 
     RatId prefer(RatId current, const RatMetricsVec &metrics) const override {
-        double votes[(int)RatId::COUNT] = {0};
+        double votes[(int)RatId::COUNT];
+        return vote(current, metrics, votes);
+    }
+
+    const char *name() const override { return "Ensemble"; }
+
+  protected:
+    void explain(PolicyResponse &out, RatId current, RatId wanted, const RatMetricsVec &metrics) const override {
+        double votes[(int)RatId::COUNT];
+        vote(current, metrics, votes);
+        TimeToTriggerPolicy::explain(out, current, wanted, metrics);
+        if (out.branch == "margin")  // kept although another RAT leads: within the stickiness
+            out.branch = "sticky";
+        std::string tally;
+        for (int i = 0; i < (int)RatId::COUNT; ++i)
+            if (votes[i] > 0) {
+                char buf[32];
+                snprintf(buf, sizeof buf, "%s%s %g", tally.empty() ? "votes: " : "; ", ratName((RatId)i), votes[i]);
+                tally += buf;
+            }
+        if (out.branch == "sticky" || out.branch == "best")
+            out.reason = tally;
+        else if (!tally.empty())
+            out.reason += (out.reason.empty() ? "" : "; ") + tally;
+    }
+
+  private:
+    // Each member names the RAT it prefers now; returns the RAT to use (leader, or current within
+    // the stickiness) and fills 'votes' (indexed by RatId).
+    RatId vote(RatId current, const RatMetricsVec &metrics, double *votes) const {
+        std::fill(votes, votes + (int)RatId::COUNT, 0.0);
         bool anyVote = false;
         for (size_t k = 0; k < members_.size(); ++k) {
             if (weights_[k] <= 0.0)
@@ -87,9 +117,6 @@ class EnsemblePolicy : public TimeToTriggerPolicy {
         return best;
     }
 
-    const char *name() const override { return "Ensemble"; }
-
-  private:
     std::vector<std::unique_ptr<TimeToTriggerPolicy>> members_;
     std::vector<double> weights_; // parallel to members_ (coverage, sinr, latency, load)
     double stickiness_; // votes within this margin of the leader keep current

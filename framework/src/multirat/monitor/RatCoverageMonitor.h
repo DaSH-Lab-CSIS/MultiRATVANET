@@ -40,6 +40,11 @@ class  RatCoverageMonitor : public omnetpp::cSimpleModule, public omnetpp::cList
     // Snapshot of the latest per-RAT metrics (indexed by ratIndex()).
     const RatMetricsVec &getMetrics() const { return metrics_; }
     bool isInRange(RatId r) const;
+    // The car's position in simulator coordinates; false if it has no mobility module.
+    bool getPosition(double &x, double &y) const;
+    // The node serving this RAT: the RSU/AP the car is associated with, or the serving cell;
+    // "" if none. For the decision log.
+    std::string servingNodeName(RatId r) const;
 
     // The car's probe results for one RAT, from its MultiRatProbeApp: round trip of the latest
     // echo and the mean over the last second (ms), share of recent probes lost, and when the
@@ -122,6 +127,7 @@ class  RatCoverageMonitor : public omnetpp::cSimpleModule, public omnetpp::cList
     bool measuredMode_ = true;
     double measurementMaxAge_ = 0.5;
     std::string dsrcNic_, wifiNic_;
+    std::map<uint64_t, std::string> infraByMac_;  // 802.11 infrastructure MAC -> node name, from frames heard
     omnetpp::simsignal_t measuredSinrDlSignal_ = -1;
 
     RatCfg cfg_[(int)RatId::COUNT];

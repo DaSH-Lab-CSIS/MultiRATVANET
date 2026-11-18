@@ -195,11 +195,20 @@ A reply counts in the window it arrives in, which can be the one after its reque
 struct PolicyResponse {
     RatId rat;                               // the default RAT
     std::map<std::string, RatId> classRat;   // optional: a different RAT for a class
-    std::string reason;                      // optional, written to the simulation log
+    std::string reason;                      // optional, written to the simulation log and the decision log
+    std::string branch;                      // optional: which outcome of the policy's decision tree this was
 };
 ```
 
 `PolicyResponse(RatId)` puts every class on one RAT, which is what the built-in policies do.
+
+`reason` and `branch` change nothing in the simulation. Every decision is written to
+`<config>-#<run>.decisions.csv` next to the `.sca` (parameter `decisionLog`): the car's position,
+what each RAT measured, the choice, `branch` and `reason`. The report draws its map, decision-tree
+counts and decision table from it. The built-in policies set `branch` to one of `none`, `start`,
+`lost`, `best`, `margin`, `wait`, `switch` (Ensemble also `sticky`, ReliableSinr also `failing`), and the report's decision tree
+for each built-in policy uses those names. A policy of your own may leave both empty; the report
+then lists its decisions as "Policy's choice", with the `reason` if there is one.
 
 **`rat`, the default RAT**
 
@@ -285,6 +294,10 @@ PolicyResponse decide(const PolicyRequest &req) override {
 
    or add a config to `simulations/omnetpp.ini` that sets `*.car[*].multiRatAppManager.policy`.
 
+5. Compare it with the others: add it to `dash/run-experiment.sh` (`--policy`) and run the test
+   bench with it, `bench/run.sh --only "my_policy sinr only_dsrc only_wifi only_nr"`
+   ([bench/README.md](../bench/README.md)).
+
 **Parameters.** To make a value configurable, add a parameter to `MultiRatAppManager.ned`, a field
 to `PolicyParams` (`IRatSelectionPolicy.h`), read it where the manager fills `PolicyParams`
 (`MultiRatAppManager.cc`), and pass it to the constructor in the factory. `timeToTrigger`,
@@ -305,10 +318,16 @@ They use `connection.currentRat` and `rats` only, and put every traffic class on
 |---|---|---|
 | `CoveragePriority` | First usable RAT in the order DSRC, WiFi, NR, LTE, 6G; stays unless a higher-priority one is usable. | `inRange` |
 | `Sinr` | Largest `sinrDb − minSinrDb`; another RAT must be better by `sinrSwitchMargin` (3 dB). | `sinrDb`, `minSinrDb` |
+| `ReliableSinr` | Most reliable usable RAT: share of its probes echoed, smoothed over the car's decisions, halved if half its mean probe RTT is over `latencyBudget`; within 5 points, the larger SINR margin wins. Another RAT must be 15 points more reliable, or as reliable and `sinrSwitchMargin` stronger. A current RAT that stops answering (no echo for 0.25 s beyond twice its mean RTT, or half its probes lost) is left at once for one that is answering (branch `failing`). A RAT left because it failed or was lost is not considered again for 2 s unless nothing else is usable. | `probeLoss`, `probeAge`, `probeRttMeanMs`, `sinrDb`, `minSinrDb`, `linked` |
 | `LatencyQos` | Latency of a RAT is half its `probeRttMeanMs`. Highest `linkRateMbps` among RATs within `latencyBudget` (100 ms), else lowest latency; another RAT must offer 25 % more link rate. | `probeRttMeanMs`, `linkRateMbps` |
 | `Load` | Lowest sensed `load` among DSRC and WiFi; another RAT must be lower by `loadSwitchMargin` (0.15). A RAT without a load figure (NR) is used only when neither is usable. | `load` |
 | `Ensemble` | Weighted vote of the four above (`ensembleWeight*`); the leader must beat the current RAT by more than `ensembleStickiness` votes. Time-to-trigger is applied to the outcome of the vote. | all of the above |
 | `Ml` | The RAT last passed to `MlPolicy::suggest()` if usable, else as CoveragePriority. Nothing calls `suggest()` yet. | |
+
+**Baselines.** `OnlyDsrc`, `OnlyWifi` and `OnlyNr` (`SingleRatPolicy.h`) use one RAT and never
+another: they ask for it whenever it is usable and otherwise answer `NONE`, so a car stays on it
+even out of range. The test bench ([bench/README.md](../bench/README.md)) compares the policies
+with them.
 
 To write a policy the same way, derive from `TimeToTriggerPolicy` and implement `prefer()` and
 `name()`; `SinrPolicy.h` is the shortest example.

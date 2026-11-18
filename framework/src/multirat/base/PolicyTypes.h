@@ -110,7 +110,11 @@ struct PolicyRequest {
 struct PolicyResponse {
     RatId rat = RatId::NONE;   // RAT for every class not named in classRat; NONE or the current RAT = stay
     std::map<std::string, RatId> classRat;   // optional: a different RAT for a class, by class name
-    std::string reason;        // optional free text, written to the simulation log
+    std::string reason;        // optional free text, written to the simulation log and the decision log
+    // optional: which outcome of the policy's decision tree this was, for the report. The built-in
+    // policies use start, none, lost, best, margin, wait, switch (Ensemble also sticky); see
+    // TimeToTriggerPolicy::explain().
+    std::string branch;
 
     PolicyResponse() {}
     PolicyResponse(RatId r, const std::string &why = "") : rat(r), reason(why) {}

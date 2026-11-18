@@ -29,7 +29,7 @@ simple MultiRatAppManager
         string routingTableModule = default("^.ipv4.routingTable");
         string interfaceTableModule = default("^.interfaceTable");
 
-        string policy = default("CoveragePriority"); // CoveragePriority|Sinr|LatencyQos|Load|Ml|Ensemble|ExampleSplit
+        string policy = default("CoveragePriority"); // CoveragePriority|Sinr|LatencyQos|Load|Ml|Ensemble|ExampleSplit; baselines OnlyDsrc|OnlyWifi|OnlyNr
         double decisionInterval @unit(s) = default(0.5s);
         // Scenario setting, not a policy tool: extra delay before the route moves, for signalling
         // the stacks do not simulate (e.g. IP mobility). 0 = the switch costs only what the
@@ -37,6 +37,10 @@ simple MultiRatAppManager
         double handoverExecDelay @unit(s) = default(0s);
         double pingPongWindow @unit(s) = default(2s);
         double startTime @unit(s) = default(1s);   // after the car appears; plus a random phase within decisionInterval
+        // CSV with one row per decision (position, what each RAT measured, the choice and the
+        // policy's reason), shared by all cars of the run; "" = off. omnetpp.ini puts it next to
+        // the .sca; the report draws its map, decision tree counts and decision table from it.
+        string decisionLog = default("");
 
         // ---- Policy tunables ----
         // A different usable RAT must stay the policy's choice for this long before the switch

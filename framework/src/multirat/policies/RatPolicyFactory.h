@@ -13,7 +13,8 @@ namespace multiratvanet {
 class RatPolicyFactory {
   public:
     // Recognized names: "CoveragePriority", "Sinr", "LatencyQos", "Load", "Ml", "Ensemble", and
-    // "ExampleSplit" (a template that puts each traffic class on its own RAT).
+    // "ExampleSplit" (a template that puts each traffic class on its own RAT), and the one-RAT
+    // baselines "OnlyDsrc", "OnlyWifi", "OnlyNr".
     // Returns nullptr for any other name.
     static std::unique_ptr<IRatSelectionPolicy> create(const std::string &name, const PolicyParams &params = PolicyParams());
 };

@@ -52,6 +52,16 @@ class LoadPolicy : public TimeToTriggerPolicy {
 
     const char *name() const override { return "Load"; }
 
+  protected:
+    std::string marginNote(RatId current, RatId top, const RatMetricsVec &metrics) const override {
+        double c = metrics[ratIndex(current)].load, t = metrics[ratIndex(top)].load;
+        if (std::isnan(c) || std::isnan(t))
+            return "";
+        char buf[48];
+        snprintf(buf, sizeof buf, "%.0f%% less busy, needs %.0f%%", (c - t) * 100, marginLoad_ * 100);
+        return buf;
+    }
+
   private:
     double marginLoad_;
 };
